@@ -439,10 +439,10 @@ Publishing with a shared client ID requires Google OAuth app verification
 ## 9. Build Phases
 
 ### Phase 1 — Scaffolding
-- [ ] Clone Obsidian sample plugin template
-- [ ] Configure esbuild for TSX + CSS
-- [ ] Register `ItemView`, mount React root, confirm sidebar renders
-- [ ] Install FullCalendar, render static test event with correct height
+- [x] Clone Obsidian sample plugin template
+- [x] Configure esbuild for TSX + CSS
+- [x] Register `ItemView`, mount React root, confirm sidebar renders
+- [x] Install FullCalendar, render static test event with correct height
 
 ### Phase 2 — Auth
 - [ ] Build OAuth PKCE flow (single account)
@@ -523,17 +523,18 @@ Publishing with a shared client ID requires Google OAuth app verification
 - Research complete
 - PRD + tech design written
 - GCP setup: DONE
-  - Project: obsidian-gcal
-  - Calendar API enabled
-  - OAuth client created (Desktop app type)
-  - Client ID + Secret saved
-  - Test user(s) added
-- Phase 1: not started — starting next
+- Phase 1: DONE
+  - esbuild configured for TSX + CSS
+  - ItemView registered, React root mounts correctly
+  - FullCalendar rendering in sidebar with test event
+  - Plugin symlinked to test vault, hot-reload installed
+- Phase 2: not started — starting next
 
 ## Next Steps
 
-1. Confirm Node.js + npm versions installed
-2. Clone Obsidian sample plugin template
-3. Configure esbuild for TSX + CSS
-4. Register ItemView, confirm sidebar renders
-5. Install FullCalendar, render static test event
+1. Build OAuthManager.ts — PKCE flow, single account
+2. Local HTTP server for OAuth callback
+3. TokenStore.ts — read/write via plugin.saveData()
+4. Auto-refresh with race condition lock
+5. Settings tab UI for adding/removing accounts
+6. Expand to multi-account
