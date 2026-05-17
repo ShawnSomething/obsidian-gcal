@@ -59,28 +59,25 @@ Comfortable with React/TSX. Needs Obsidian-specific patterns explained.
 | Build | esbuild | Obsidian plugin template standard |
 
 ### FullCalendar packages
-@fullcalendar/core
-@fullcalendar/react
-@fullcalendar/timegrid      ← day + week time-grid
-@fullcalendar/daygrid       ← month grid
-@fullcalendar/interaction   ← drag-drop + click-to-create
+- @fullcalendar/core
+- @fullcalendar/react
+- @fullcalendar/timegrid
+- @fullcalendar/daygrid
+- @fullcalendar/interaction
 
-### esbuild config for React + CSS
-The default Obsidian template needs these additions to `esbuild.config.mjs`:
+### esbuild config additions (already applied)
 ```js
-// Add to the build options:
-jsx: "automatic",           // enables React 18 JSX transform (no import React needed)
-loader: { ".css": "css" },  // bundles FullCalendar CSS
+jsx: "automatic",
+loader: { ".css": "css" },
 ```
-Also add to `package.json` devDependencies:
-@types/react, @types/react-dom, react, react-dom
 
 ---
 
 ## 5. Architecture
 
 ### 5.1 File Structure
-obsidian-gcal-plugin/
+```
+obsidian-gcal/
 ├── src/
 │   ├── main.ts                   ← Plugin entry point, registers ItemView + settings tab
 │   ├── CalendarView.tsx          ← ItemView shell, mounts React root
@@ -95,53 +92,34 @@ obsidian-gcal-plugin/
 │   ├── settings/
 │   │   └── SettingsTab.ts        ← Obsidian PluginSettingTab (account management)
 │   ├── auth/
-│   │   ├── OAuthManager.ts       ← OAuth PKCE flow per account
+│   │   ├── OAuthManager.ts       ← OAuth PKCE flow per account ✓ CREATED
 │   │   └── TokenStore.ts         ← Read/write tokens via plugin.saveData()
 │   ├── api/
 │   │   ├── GoogleCalendarAPI.ts  ← All API calls with auto-refresh
-│   │   └── types.ts              ← TypeScript types for all Google API shapes
+│   │   └── types.ts              ← TypeScript types for all Google API shapes ✓ CREATED
 │   └── utils/
 │       └── dedup.ts              ← Event deduplication by iCalUID
-├── styles.css                    ← FullCalendar CSS imports + Obsidian theme overrides
+├── styles.css
 ├── manifest.json
 ├── package.json
 └── esbuild.config.mjs
+```
 
 ### 5.2 React Mounting Pattern (Critical for Obsidian)
 
-Obsidian's `ItemView` is not a React component. You must manually mount/unmount React.
-**This is the pattern — do not deviate from it:**
+Obsidian's `ItemView` is not a React component. Mount/unmount manually.
 
 ```typescript
 // CalendarView.tsx
-import { ItemView, WorkspaceLeaf } from "obsidian";
-import { createRoot, Root } from "react-dom/client";
-import CalendarPanel from "./components/CalendarPanel";
-import GCalPlugin from "./main";
+async onOpen() {
+  const container = this.containerEl.children[1];
+  if (!container) throw new Error("CalendarView: container not found");
+  this.root = createRoot(container);
+  this.root.render(<CalendarPanel plugin={this.plugin} />);
+}
 
-export const VIEW_TYPE = "gcal-view";
-
-export class CalendarView extends ItemView {
-  private root: Root | null = null;
-  plugin: GCalPlugin;
-
-  constructor(leaf: WorkspaceLeaf, plugin: GCalPlugin) {
-    super(leaf);
-    this.plugin = plugin;
-  }
-
-  getViewType() { return VIEW_TYPE; }
-  getDisplayText() { return "Google Calendar"; }
-
-  async onOpen() {
-    // containerEl.children[1] is the content area (children[0] is the header)
-    this.root = createRoot(this.containerEl.children[1]);
-    this.root.render(<CalendarPanel plugin={this.plugin} />);
-  }
-
-  async onClose() {
-    this.root?.unmount();
-  }
+async onClose() {
+  this.root?.unmount();
 }
 ```
 
@@ -149,7 +127,7 @@ Missing `onClose` unmount = memory leak on every sidebar close.
 
 ### 5.3 State Management
 
-Use **React Context + useReducer**. No external state library needed.
+React Context + useReducer. No external state library.
 
 `CalendarContext.tsx` provides:
 - `accounts: AccountConfig[]`
@@ -159,17 +137,14 @@ Use **React Context + useReducer**. No external state library needed.
 - `selectedDate: Date`
 - `dispatch` — actions: `SET_EVENTS`, `SET_CALENDARS`, `TOGGLE_CALENDAR`, `SET_VIEW`, `SET_DATE`
 
-`CalendarPanel` wraps everything in `<CalendarProvider plugin={plugin}>`.
-All child components consume via `useCalendar()` hook.
-
 ### 5.4 Data Model
 
 **Persisted to disk (`plugin.saveData()`):**
 ```typescript
 interface PluginData {
   accounts: AccountConfig[];
-  calendarVisibility: Record<string, boolean>; // calendarId → visible
-  clientId: string;     // from GCP project
+  calendarVisibility: Record<string, boolean>;
+  clientId: string;
   clientSecret: string;
 }
 
@@ -182,40 +157,32 @@ interface AccountConfig {
 }
 ```
 
-**In-memory (rebuilt on load):**
+**In-memory:**
 ```typescript
 interface CalendarMeta {
   id: string;
   accountId: string;
   summary: string;
-  backgroundColor: string;  // hex color from Google API
+  backgroundColor: string;
   visible: boolean;
 }
 
 interface CalEvent {
-  id: string;             // Google event ID (instance ID for recurring)
-  iCalUID: string;        // used for deduplication across accounts
+  id: string;
+  iCalUID: string;
   calendarId: string;
-  accountId: string;      // determines which token to use for writes
+  accountId: string;
   title: string;
-  start: string;          // ISO datetime string
+  start: string;
   end: string;
   allDay: boolean;
   htmlLink: string;
-  color: string;          // resolved color (event override or calendar color)
+  color: string;
   attendees: Attendee[];
   selfResponseStatus: "accepted" | "declined" | "tentative" | "needsAction";
-  recurrence?: string[];          // iCal RRULE strings
-  recurringEventId?: string;      // present on recurring instances
+  recurrence?: string[];
+  recurringEventId?: string;
 }
-```
-
-**Event color resolution:**
-```typescript
-// In GoogleCalendarAPI.ts when mapping events
-const color = event.colorId
-  ? GOOGLE_COLOR_MAP[event.colorId]   // event-level override
-  : calendar.backgroundColor;          // fall back to calendar color
 ```
 
 ### 5.5 OAuth Flow (per account)
@@ -225,20 +192,17 @@ const color = event.colorId
 3. Plugin generates PKCE `code_verifier` + `code_challenge` (SHA-256)
 4. Plugin generates random `state` token (CSRF protection)
 5. Starts local HTTP server on `localhost:42813`
-6. Opens browser to Google OAuth URL with all params
-7. User approves → browser redirects to `localhost:42813/callback?code=...&state=...`
-8. Plugin verifies `state` matches, exchanges `code` for tokens
+6. Opens browser to Google OAuth URL
+7. User approves → browser redirects to `localhost:42813/callback`
+8. Plugin verifies `state`, exchanges `code` for tokens
 9. Tokens saved, server shuts down
 
 **Token refresh — with race condition protection:**
 ```typescript
-// In GoogleCalendarAPI.ts
 private refreshPromise: Promise<void> | null = null;
 
 private async ensureFreshToken(account: AccountConfig): Promise<string> {
   if (Date.now() < account.tokenExpiry - 60000) return account.accessToken;
-
-  // Lock: if a refresh is already in flight, wait for it
   if (!this.refreshPromise) {
     this.refreshPromise = this.doRefresh(account).finally(() => {
       this.refreshPromise = null;
@@ -250,142 +214,67 @@ private async ensureFreshToken(account: AccountConfig): Promise<string> {
 ```
 
 **Port conflict handling:**
-Try `42813` first. If `EADDRINUSE`, try `42814`, `42815` (scan up to 5 ports).
-Log which port was used — the GCP project must have all candidate ports registered
-as redirect URIs.
+Try 42813 first. If `EADDRINUSE`, scan up to 42817. All ports must be registered in GCP as redirect URIs.
 
 ### 5.6 Event Fetching
 
-On load + every 5 minutes (use `plugin.registerInterval`):
-1. For each account → `GET /calendar/v3/users/me/calendarList`
+On load + every 5 minutes (`plugin.registerInterval`):
+1. Per account → `GET /calendar/v3/users/me/calendarList`
 2. Filter to visible calendars
 3. Per calendar → `GET /calendar/v3/calendars/{id}/events`
-   - `timeMin` = start of current view window (ISO string)
-   - `timeMax` = end of current view window (ISO string)
-   - `singleEvents=true` — expands recurring events into instances
+   - `timeMin/timeMax` = current view window
+   - `singleEvents=true`
    - `maxResults=250`
-4. Merge all events from all accounts
-5. **Deduplicate by `iCalUID`** — shared calendars appear in multiple accounts
-6. Dispatch `SET_EVENTS` to context
-7. On view date change → refetch immediately for new window
+4. Merge all events, deduplicate by `iCalUID`
+5. Dispatch `SET_EVENTS`
+6. On view date change → refetch immediately
 
 ### 5.7 Write Operations
 
-#### Drag-to-move
-
-FullCalendar fires eventDrop({ event, delta, revert })
-If event.extendedProps.recurringEventId → show RecurringModal
-User picks scope → resolve correct eventId + endpoint (see Recurring section)
-PATCH /calendar/v3/calendars/{calId}/events/{eventId}
-Body: { start: { dateTime }, end: { dateTime } }
-Query: sendUpdates=none   ← CRITICAL: prevents emailing all attendees on drag
-On success → refetch events for current window
-On error → call revert() to snap event back
-
-
-#### Edit event
-
-eventClick → open EventModal pre-filled
-User edits + saves
-If recurring → show RecurringModal
-PUT /calendar/v3/calendars/{calId}/events/{eventId} (full event body)
-Query: sendUpdates=all   ← user explicitly edited, so notify attendees
-On success → refetch
-
-
-#### Create event
-
-dateClick / drag-select on empty slot → open EventModal with start/end pre-filled
-User fills title (minimum), optional: description, calendar picker, guests
-POST /calendar/v3/calendars/{calId}/events
-Query: sendUpdates=all
-On success → refetch
-
-
-#### Accept / Decline
-
-In EventModal, show response buttons if selfResponseStatus === "needsAction"
-PATCH /calendar/v3/calendars/{calId}/events/{eventId}
-Body: { attendees: [...original, { email: selfEmail, responseStatus: "accepted" }] }
-Note: must send full attendees array — PATCH on arrays replaces the whole array
-On success → refetch
-
+**Drag-to-move:** `PATCH` with `sendUpdates=none`. Call `revert()` on error.
+**Edit event:** `PUT` full event body, `sendUpdates=all`.
+**Create event:** `POST`, `sendUpdates=all`.
+**Accept/Decline:** `PATCH` attendees array (must send full array).
 
 ### 5.8 Recurring Event Write Patterns
 
-Three choices map to completely different API calls:
+- **This event only** — PATCH/PUT the instance ID directly
+- **This and following** — Split series: modify master RRULE + POST new series
+- **All events** — PATCH/PUT the master event via `recurringEventId`
 
-**"This event only"**
-- The `eventId` in the URL is already the instance ID (format: `baseId_YYYYMMDDTHHmmssZ`)
-- PATCH or PUT that instance ID directly
-- Google creates an override for just that instance
+### 5.9 FullCalendar Config Notes
 
-**"This and following"**
-- GET the master event via `recurringEventId`
-- Modify the master event's RRULE to add `UNTIL=<date before this instance>`
-- POST a new recurring event starting from this instance with the new times/data
-- This effectively splits the series into two
-
-**"All events"**
-- GET the master event using `event.recurringEventId` as the event ID
-- PATCH or PUT the master event
-- All future instances reflect the change
-
-### 5.9 FullCalendar Configuration Notes
-
-**Height fix (critical for sidebar):**
+**Height fix:**
 ```tsx
-// Parent div must have explicit height
 <div style={{ height: "100%", overflow: "hidden" }}>
   <FullCalendar height="100%" ... />
 </div>
-// Plus in CSS: .view-content { height: 100%; }
 ```
+Plus in CSS: `.view-content { height: 100%; }`
 
-**3-day view (not a named built-in):**
+**3-day view:**
 ```tsx
-views={{
-  threeDays: {
-    type: "timeGrid",
-    duration: { days: 3 },
-    buttonText: "3D",
-  }
-}}
-customButtons={{
-  threeDaysButton: {
-    text: "3D",
-    click: () => calendarRef.current.getApi().changeView("threeDays"),
-  }
-}}
+views={{ threeDays: { type: "timeGrid", duration: { days: 3 } } }}
 ```
-
-**View toggle buttons** live outside FullCalendar's own header (for more control).
-Use `calendarRef.current.getApi()` to imperatively change views and navigate.
 
 ---
 
 ## 6. Obsidian-Specific Patterns
 
-### 6.1 Settings Tab
-Account management lives in Obsidian's native settings panel (not inside the sidebar view).
-Create `SettingsTab.ts` extending `PluginSettingTab`.
-Register it in `main.ts` via `this.addSettingTab(new SettingsTab(this.app, this))`.
+### Settings Tab
+Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 
-### 6.2 Theming (CSS Variables)
-FullCalendar's colors must map to Obsidian's CSS variables:
-
+### Theming (CSS Variables)
 | Obsidian variable | Used for |
 |---|---|
 | `--background-primary` | Calendar background |
 | `--background-secondary` | Time slot background |
 | `--text-normal` | Event text, time labels |
 | `--text-muted` | Faint labels, borders |
-| `--interactive-accent` | Today highlight, selected state |
+| `--interactive-accent` | Today highlight |
 | `--background-modifier-border` | Grid lines |
 
-Override FullCalendar's default CSS by targeting `.fc` in `styles.css`.
-
-### 6.3 manifest.json Requirements (for store submission)
+### manifest.json
 ```json
 {
   "id": "gcal-obsidian",
@@ -398,59 +287,46 @@ Override FullCalendar's default CSS by targeting `.fc` in `styles.css`.
   "isDesktopOnly": true
 }
 ```
-`isDesktopOnly: true` is required — this plugin uses Node.js HTTP server for OAuth.
 
 ---
 
-## 7. Dev Environment Setup
+## 7. Dev Environment
 
-1. Clone: `https://github.com/obsidianmd/obsidian-sample-plugin`
-2. `npm install`
-3. Modify `esbuild.config.mjs` for JSX + CSS (see section 4)
-4. Install `react react-dom @types/react @types/react-dom`
-5. Create a test vault in Obsidian
-6. Symlink built output to vault:
-ln -s /path/to/plugin/.obsidian/plugins/gcal-obsidian /path/to/repo
-   OR: set `outdir` in esbuild config to point directly to vault's plugin folder
-7. Install the `hot-reload` community plugin in the test vault
-   (auto-reloads the plugin when `main.js` changes — saves constant manual reload)
-8. `npm run dev` — watches and rebuilds on save
+- Repo: `/Users/shawnkhoo/Documents/Code/obsidian-gcal/obsidian-gcal`
+- Test vault: `/Users/shawnkhoo/Documents/Code/obsidian-gcal/gcal-test`
+- Plugin symlinked into vault's `.obsidian/plugins/obsidian-gcal/`
+- `npm run dev` — watches and rebuilds on save
+- Hot-reload: not working due to symlink issue. Use `Cmd+P` → "Reload app without saving" manually.
 
 ---
 
-## 8. Google Cloud Setup (Required Before Phase 1)
+## 8. Google Cloud Setup — DONE
 
-1. Create project at console.cloud.google.com
-2. Enable Google Calendar API
-3. Create OAuth 2.0 credentials → Desktop App type
-4. Add authorised redirect URIs:
-   - `http://localhost:42813`
-   - `http://localhost:42814`
-   - `http://localhost:42815`
-   (multiple in case of port conflicts)
-5. Copy Client ID + Secret → enter in plugin settings
-
-For community store: guide users through the same GCP setup.
-Publishing with a shared client ID requires Google OAuth app verification
-(privacy policy, domain verification, Google review). Handle post-v1.
+- Project created
+- Calendar API enabled
+- OAuth 2.0 credentials created (Desktop App type)
+- Redirect URIs registered: `http://localhost:42813` through `42817`
+- Client ID + Secret saved
 
 ---
 
 ## 9. Build Phases
 
-### Phase 1 — Scaffolding
+### Phase 1 — Scaffolding ✅ DONE
 - [x] Clone Obsidian sample plugin template
 - [x] Configure esbuild for TSX + CSS
 - [x] Register `ItemView`, mount React root, confirm sidebar renders
 - [x] Install FullCalendar, render static test event with correct height
 
-### Phase 2 — Auth
-- [ ] Build OAuth PKCE flow (single account)
-- [ ] Local HTTP server for callback
-- [ ] Token store + retrieval via `plugin.saveData()`
+### Phase 2 — Auth 🔄 IN PROGRESS
+- [x] OAuthManager.ts — PKCE flow scaffolded
+- [x] types.ts — AccountConfig + PluginData types created
+- [ ] Fix bug in OAuthManager.ts (codeChallenge/codeVerifier mismatch in buildAuthUrl)
+- [ ] TokenStore.ts — read/write via `plugin.saveData()`
 - [ ] Auto-refresh with race condition lock
+- [ ] Settings tab UI — enter Client ID/Secret, add/remove accounts
+- [ ] Wire OAuthManager into settings tab
 - [ ] Multi-account support (accounts array)
-- [ ] Settings tab UI for adding/removing accounts
 
 ### Phase 3 — Read Data
 - [ ] Fetch calendar list per account
@@ -459,6 +335,7 @@ Publishing with a shared client ID requires Google OAuth app verification
 - [ ] Render in FullCalendar with resolved colors
 - [ ] Calendar show/hide toggles
 - [ ] 5-min polling via `plugin.registerInterval`
+- [ ] Manual refresh button in CalendarPanel header — triggers same fetch as interval
 
 ### Phase 4 — Write Operations
 - [ ] Drag-to-move → PATCH (`sendUpdates=none`)
@@ -480,8 +357,8 @@ Publishing with a shared client ID requires Google OAuth app verification
 ### Phase 7 — Publish Prep
 - [ ] Error handling + user-facing messages for all failure cases
 - [ ] README with GCP setup guide
-- [ ] GitHub repo with releases (must include `main.js`, `manifest.json`, `styles.css`)
-- [ ] PR to `obsidian/obsidian-releases` repo to list in community store
+- [ ] GitHub releases (`main.js`, `manifest.json`, `styles.css`)
+- [ ] PR to `obsidian/obsidian-releases`
 
 ---
 
@@ -506,13 +383,15 @@ Publishing with a shared client ID requires Google OAuth app verification
 | Decision | Choice | Reason |
 |---|---|---|
 | Mobile | Desktop only (v1) | Mobile OAuth is a separate complexity |
-| State management | React Context + useReducer | Right scale for this app, no extra dependencies |
+| State management | React Context + useReducer | Right scale, no extra dependencies |
 | Recurring edits | Standard 3-way modal | Matches Google Calendar UX |
 | Calendar visibility default | All active calendars visible | Matches Google Calendar default |
 | Event creation | Click empty slot | Akiflow-style, least friction |
 | Default new event calendar | First account's primary | Overridable in create modal |
 | `sendUpdates` on drag | `none` | Dragging should not spam attendees |
 | `sendUpdates` on explicit edit | `all` | User is intentionally changing the event |
+| `baseUrl` in tsconfig | Removed | esbuild handles resolution, not needed |
+| `moduleResolution` in tsconfig | Changed to `bundler` | Correct setting when esbuild is bundling |
 
 ---
 
@@ -520,21 +399,13 @@ Publishing with a shared client ID requires Google OAuth app verification
 
 **Last updated:** May 2026
 
-- Research complete
-- PRD + tech design written
 - GCP setup: DONE
 - Phase 1: DONE
-  - esbuild configured for TSX + CSS
-  - ItemView registered, React root mounts correctly
-  - FullCalendar rendering in sidebar with test event
-  - Plugin symlinked to test vault, hot-reload installed
-- Phase 2: not started — starting next
+- Phase 2: IN PROGRESS
 
-## Next Steps
+### Immediate Next Steps
 
-1. Build OAuthManager.ts — PKCE flow, single account
-2. Local HTTP server for OAuth callback
-3. TokenStore.ts — read/write via plugin.saveData()
-4. Auto-refresh with race condition lock
-5. Settings tab UI for adding/removing accounts
-6. Expand to multi-account
+1. Fix bug in `OAuthManager.ts` — `buildAuthUrl` receives `codeChallenge` but internally calls `generateCodeVerifier()` again, breaking PKCE. Pass `codeChallenge` through from `authorizeNewAccount()` correctly.
+2. Build `TokenStore.ts`
+3. Build `SettingsTab.ts` — UI for Client ID/Secret + add/remove accounts
+4. Wire it all together and test the OAuth flow end-to-end with a real Google account
