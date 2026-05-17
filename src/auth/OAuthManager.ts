@@ -85,7 +85,7 @@ export class OAuthManager {
 			client_id: this.clientId,
 			redirect_uri: `http://localhost:${port}`,
 			response_type: "code",
-			scope: "https://www.googleapis.com/auth/calendar",
+			scope: "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/userinfo.email",
 			code_challenge: codeChallenge,
 			code_challenge_method: "S256",
 			state,
@@ -116,8 +116,9 @@ export class OAuthManager {
 		if (!response.ok) {
 			throw new Error(`Token exchange failed: ${response.statusText}`);
 		}
-
-		return response.json();
+		const tokens = await response.json();
+		console.log("Token exchange response:", tokens);
+		return tokens;
 	}
 
 	private async fetchAccountInfo(accessToken: string): Promise<{ email: string }> {

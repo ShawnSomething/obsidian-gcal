@@ -26,33 +26,27 @@ export class SettingsTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Client ID")
-			.setDesc("From your Google Cloud OAuth 2.0 credentials")
 			.addText((text) =>
 				text
 					.setPlaceholder("your-client-id.apps.googleusercontent.com")
 					.setValue(data.clientId)
 					.onChange(async (value) => {
-						await this.tokenStore.saveClientCredentials(
-							value,
-							data.clientSecret
-						);
-                        await this.plugin.reloadCredentials();
+						const fresh = await this.tokenStore.load();
+						await this.tokenStore.saveClientCredentials(value, fresh.clientSecret);
+						await this.plugin.reloadCredentials();
 					})
 			);
 
 		new Setting(containerEl)
 			.setName("Client Secret")
-			.setDesc("From your Google Cloud OAuth 2.0 credentials")
 			.addText((text) =>
 				text
 					.setPlaceholder("GOCSPX-...")
 					.setValue(data.clientSecret)
 					.onChange(async (value) => {
-						await this.tokenStore.saveClientCredentials(
-							data.clientId,
-							value
-						);
-                        await this.plugin.reloadCredentials();
+						const fresh = await this.tokenStore.load();
+						await this.tokenStore.saveClientCredentials(fresh.clientId, value);
+						await this.plugin.reloadCredentials();
 					})
 			);
 
@@ -96,15 +90,15 @@ export class SettingsTab extends PluginSettingTab {
 						}
 
 						try {
-							const oauth = new OAuthManager(
-								freshData.clientId,
-								freshData.clientSecret
-							);
+							const oauth = new OAuthManager(freshData.clientId, freshData.clientSecret);
 							const account = await oauth.authorizeNewAccount();
+							console.log("Account returned:", account);
 							await this.tokenStore.saveAccount(account);
+							console.log("Account saved");
 							new Notice(`Connected: ${account.displayName}`);
 							this.display();
 						} catch (err: any) {
+							console.error("Auth error:", err);
 							new Notice(`Auth failed: ${err.message}`);
 						}
 					})
