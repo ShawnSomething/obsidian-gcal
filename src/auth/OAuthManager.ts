@@ -27,7 +27,7 @@ export class OAuthManager {
 		const redirectUri = `http://localhost:${port}`;
 
 		// Step 3: Start local server + wait for callback
-		const code = await this.waitForCallback(port, state);
+		const code = await this.waitForCallback(port, state, codeChallenge);
 
 		// Step 4: Exchange code for tokens
 		const tokens = await this.exchangeCodeForTokens(
@@ -48,7 +48,7 @@ export class OAuthManager {
 		};
 	}
 
-	private async waitForCallback(port: number, state: string): Promise<string> {
+	private async waitForCallback(port: number, state: string, codeChallenge: string): Promise<string> {
 		return new Promise((resolve, reject) => {
 			const server = http.createServer((req, res) => {
 				const url = new URL(req.url ?? "", `http://localhost:${port}`);
@@ -75,7 +75,7 @@ export class OAuthManager {
 			server.on("error", reject);
 
 			// Open browser to Google auth URL
-			const authUrl = this.buildAuthUrl(port, state, this.generateCodeVerifier());
+			const authUrl = this.buildAuthUrl(port, state, codeChallenge);
 			this.openBrowser(authUrl);
 		});
 	}
