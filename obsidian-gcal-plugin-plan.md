@@ -92,11 +92,11 @@ obsidian-gcal/
 │   ├── settings/
 │   │   └── SettingsTab.ts        ← Obsidian PluginSettingTab (account management)
 │   ├── auth/
-│   │   ├── OAuthManager.ts       ← OAuth PKCE flow per account ✓ CREATED
-│   │   └── TokenStore.ts         ← Read/write tokens via plugin.saveData()
+│   │   ├── OAuthManager.ts       ← OAuth PKCE flow per account ✓ DONE
+│   │   └── TokenStore.ts         ← Read/write tokens via plugin.saveData() ✓ DONE
 │   ├── api/
-│   │   ├── GoogleCalendarAPI.ts  ← All API calls with auto-refresh
-│   │   └── types.ts              ← TypeScript types for all Google API shapes ✓ CREATED
+│   │   ├── GoogleCalendarAPI.ts  ← All API calls with auto-refresh ✓ DONE
+│   │   └── types.ts              ← TypeScript types for all Google API shapes ✓ DONE
 │   └── utils/
 │       └── dedup.ts              ← Event deduplication by iCalUID
 ├── styles.css
@@ -199,19 +199,29 @@ interface CalEvent {
 
 **Token refresh — with race condition protection:**
 ```typescript
-private refreshPromise: Promise<void> | null = null;
+private refreshPromises: Map<string, Promise<void>> = new Map();
 
 private async ensureFreshToken(account: AccountConfig): Promise<string> {
   if (Date.now() < account.tokenExpiry - 60000) return account.accessToken;
-  if (!this.refreshPromise) {
-    this.refreshPromise = this.doRefresh(account).finally(() => {
-      this.refreshPromise = null;
-    });
+  const existing = this.refreshPromises.get(account.accountId);
+  if (existing) {
+    await existing;
+    const updated = await this.tokenStore.load();
+    const fresh = updated.accounts.find(a => a.accountId === account.accountId);
+    return fresh?.accessToken ?? account.accessToken;
   }
-  await this.refreshPromise;
-  return account.accessToken;
+  const promise = this.doRefresh(account).finally(() => {
+    this.refreshPromises.delete(account.accountId);
+  });
+  this.refreshPromises.set(account.accountId, promise);
+  await promise;
+  const updated = await this.tokenStore.load();
+  const fresh = updated.accounts.find(a => a.accountId === account.accountId);
+  return fresh?.accessToken ?? account.accessToken;
 }
 ```
+
+Note: `refreshPromises` is a `Map` keyed by `accountId` — not a single Promise — so multiple accounts refresh independently.
 
 **Port conflict handling:**
 Try 42813 first. If `EADDRINUSE`, scan up to 42817. All ports must be registered in GCP as redirect URIs.
@@ -296,6 +306,7 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - Test vault: `/Users/shawnkhoo/Documents/Code/obsidian-gcal/gcal-test`
 - Plugin symlinked into vault's `.obsidian/plugins/obsidian-gcal/`
 - `npm run dev` — watches and rebuilds on save
+- `npm run build` — one-shot production build
 - Hot-reload: not working due to symlink issue. Use `Cmd+P` → "Reload app without saving" manually.
 
 ---
@@ -318,24 +329,26 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - [x] Register `ItemView`, mount React root, confirm sidebar renders
 - [x] Install FullCalendar, render static test event with correct height
 
-### Phase 2 — Auth 🔄 IN PROGRESS
-- [x] OAuthManager.ts — PKCE flow scaffolded
-- [x] types.ts — AccountConfig + PluginData types created
-- [ ] Fix bug in OAuthManager.ts (codeChallenge/codeVerifier mismatch in buildAuthUrl)
-- [ ] TokenStore.ts — read/write via `plugin.saveData()`
-- [ ] Auto-refresh with race condition lock
-- [ ] Settings tab UI — enter Client ID/Secret, add/remove accounts
-- [ ] Wire OAuthManager into settings tab
-- [ ] Multi-account support (accounts array)
+### Phase 2 — Auth ✅ DONE
+- [x] OAuthManager.ts — PKCE flow, bug fixed (codeChallenge was regenerated inside waitForCallback instead of passed through)
+- [x] OAuth scope fix — must include both `calendar` and `userinfo.email`
+- [x] TokenStore.ts — read/write via `plugin.saveData()`, lives in `auth/`
+- [x] Auto-refresh with race condition lock (`Map<string, Promise<void>>` keyed by accountId)
+- [x] Settings tab UI — enter Client ID/Secret, add/remove accounts
+- [x] Stale closure fix — onChange handlers reload fresh data before saving credentials
+- [x] `reloadCredentials()` on main.ts — called after credential changes so API instance stays current
+- [x] Multi-account support — confirmed working, accounts stack correctly in data.json
 
-### Phase 3 — Read Data
-- [ ] Fetch calendar list per account
-- [ ] Fetch + merge events for view window
-- [ ] Deduplication by `iCalUID`
-- [ ] Render in FullCalendar with resolved colors
-- [ ] Calendar show/hide toggles
+### Phase 3 — Read Data ← NEXT
+- [ ] Build `CalendarContext.tsx` — useReducer with SET_EVENTS, SET_CALENDARS, TOGGLE_CALENDAR, SET_VIEW, SET_DATE
+- [ ] Add calendar list fetch to `GoogleCalendarAPI.ts` (`GET /calendar/v3/users/me/calendarList`)
+- [ ] Add events fetch to `GoogleCalendarAPI.ts` (`GET /calendar/v3/calendars/{id}/events`)
+- [ ] Build `utils/dedup.ts` — deduplicate by `iCalUID`
+- [ ] Wire fetching into `CalendarPanel.tsx` via context
+- [ ] Render events in FullCalendar with resolved colors
+- [ ] Calendar show/hide toggles (`CalendarToggle.tsx`)
 - [ ] 5-min polling via `plugin.registerInterval`
-- [ ] Manual refresh button in CalendarPanel header — triggers same fetch as interval
+- [ ] Manual refresh button in CalendarPanel header
 
 ### Phase 4 — Write Operations
 - [ ] Drag-to-move → PATCH (`sendUpdates=none`)
@@ -392,6 +405,9 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | `sendUpdates` on explicit edit | `all` | User is intentionally changing the event |
 | `baseUrl` in tsconfig | Removed | esbuild handles resolution, not needed |
 | `moduleResolution` in tsconfig | Changed to `bundler` | Correct setting when esbuild is bundling |
+| TokenStore location | `auth/` folder | Manages auth credentials, not API calls |
+| OAuth scope | `calendar` + `userinfo.email` | userinfo.email needed to fetch account email after token exchange |
+| refreshPromises type | `Map<string, Promise<void>>` | Independent refresh locks per account |
 
 ---
 
@@ -401,11 +417,11 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 
 - GCP setup: DONE
 - Phase 1: DONE
-- Phase 2: IN PROGRESS
+- Phase 2: DONE
+- Phase 3: NOT STARTED
 
-### Immediate Next Steps
+### Immediate Next Steps (Phase 3)
 
-1. Fix bug in `OAuthManager.ts` — `buildAuthUrl` receives `codeChallenge` but internally calls `generateCodeVerifier()` again, breaking PKCE. Pass `codeChallenge` through from `authorizeNewAccount()` correctly.
-2. Build `TokenStore.ts`
-3. Build `SettingsTab.ts` — UI for Client ID/Secret + add/remove accounts
-4. Wire it all together and test the OAuth flow end-to-end with a real Google account
+1. Start new thread with this doc attached
+2. Paste current `CalendarPanel.tsx` at the top of the new thread
+3. Build `CalendarContext.tsx` first — everything in Phase 3 plugs into it
