@@ -17,7 +17,7 @@ export default function CalendarPanel({ plugin }: Props) {
 				height="100%"
 				events={[
 					{
-						title: "Test Event",
+						title: "test event",
 						start: new Date().toISOString(),
 						end: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
 					},
