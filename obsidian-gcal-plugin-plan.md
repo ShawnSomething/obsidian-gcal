@@ -80,15 +80,15 @@ loader: { ".css": "css" },
 obsidian-gcal/
 ├── src/
 │   ├── main.ts                   ← Plugin entry point, registers ItemView + settings tab
-│   ├── CalendarView.tsx          ← ItemView shell, mounts React root
+│   ├── CalendarView.tsx          ← ItemView shell, mounts React root, wraps CalendarProvider
 │   ├── context/
-│   │   └── CalendarContext.tsx   ← React Context + useReducer (global state)
+│   │   └── CalendarContext.tsx   ← React Context + useReducer (global state) ✓ DONE
 │   ├── components/
-│   │   ├── CalendarPanel.tsx     ← FullCalendar config + view logic
+│   │   ├── CalendarPanel.tsx     ← FullCalendar config + fetch logic + header ✓ DONE
+│   │   ├── CalendarToggle.tsx    ← Show/hide individual calendars, grouped by account ✓ DONE
 │   │   ├── MiniMonth.tsx         ← Mini month navigation widget
 │   │   ├── EventModal.tsx        ← Create / edit modal
-│   │   ├── RecurringModal.tsx    ← "This / Following / All" choice
-│   │   └── CalendarToggle.tsx    ← Show/hide individual calendars
+│   │   └── RecurringModal.tsx    ← "This / Following / All" choice
 │   ├── settings/
 │   │   └── SettingsTab.ts        ← Obsidian PluginSettingTab (account management)
 │   ├── auth/
@@ -98,7 +98,7 @@ obsidian-gcal/
 │   │   ├── GoogleCalendarAPI.ts  ← All API calls with auto-refresh ✓ DONE
 │   │   └── types.ts              ← TypeScript types for all Google API shapes ✓ DONE
 │   └── utils/
-│       └── dedup.ts              ← Event deduplication by iCalUID
+│       └── dedup.ts              ← Event deduplication by iCalUID ✓ DONE
 ├── styles.css
 ├── manifest.json
 ├── package.json
@@ -108,6 +108,7 @@ obsidian-gcal/
 ### 5.2 React Mounting Pattern (Critical for Obsidian)
 
 Obsidian's `ItemView` is not a React component. Mount/unmount manually.
+`CalendarProvider` wraps the entire React tree at this level.
 
 ```typescript
 // CalendarView.tsx
@@ -115,7 +116,11 @@ async onOpen() {
   const container = this.containerEl.children[1];
   if (!container) throw new Error("CalendarView: container not found");
   this.root = createRoot(container);
-  this.root.render(<CalendarPanel plugin={this.plugin} />);
+  this.root.render(
+    <CalendarProvider>
+      <CalendarPanel plugin={this.plugin} />
+    </CalendarProvider>
+  );
 }
 
 async onClose() {
@@ -130,12 +135,15 @@ Missing `onClose` unmount = memory leak on every sidebar close.
 React Context + useReducer. No external state library.
 
 `CalendarContext.tsx` provides:
-- `accounts: AccountConfig[]`
 - `calendars: CalendarMeta[]`
 - `events: CalEvent[]`
 - `activeView: "day" | "3day" | "week"`
 - `selectedDate: Date`
-- `dispatch` — actions: `SET_EVENTS`, `SET_CALENDARS`, `TOGGLE_CALENDAR`, `SET_VIEW`, `SET_DATE`
+- `isLoading: boolean`
+- `error: string | null`
+- `dispatch` — actions: `SET_EVENTS`, `SET_CALENDARS`, `TOGGLE_CALENDAR`, `SET_VIEW`, `SET_DATE`, `SET_LOADING`, `SET_ERROR`
+
+Note: `accounts` is NOT in context — read directly from `plugin.data.accounts` at fetch time.
 
 ### 5.4 Data Model
 
@@ -157,7 +165,7 @@ interface AccountConfig {
 }
 ```
 
-**In-memory:**
+**In-memory (CalendarContext):**
 ```typescript
 interface CalendarMeta {
   id: string;
@@ -228,16 +236,33 @@ Try 42813 first. If `EADDRINUSE`, scan up to 42817. All ports must be registered
 
 ### 5.6 Event Fetching
 
-On load + every 5 minutes (`plugin.registerInterval`):
+On load + every 5 minutes (setInterval in CalendarPanel useEffect):
 1. Per account → `GET /calendar/v3/users/me/calendarList`
-2. Filter to visible calendars
-3. Per calendar → `GET /calendar/v3/calendars/{id}/events`
+2. Preserve existing `visible` state when re-fetching calendar list
+3. Per visible calendar → `GET /calendar/v3/calendars/{id}/events`
    - `timeMin/timeMax` = current view window
    - `singleEvents=true`
    - `maxResults=250`
 4. Merge all events, deduplicate by `iCalUID`
 5. Dispatch `SET_EVENTS`
 6. On view date change → refetch immediately
+
+**fetchAllRef pattern** — interval uses a ref to avoid stale closures without resetting the interval on every state change:
+```typescript
+const fetchAllRef = useRef<(() => Promise<void>) | undefined>(undefined);
+fetchAllRef.current = async () => { ... }; // always latest closure
+useEffect(() => {
+  const interval = setInterval(() => fetchAllRef.current?.(), 5 * 60 * 1000);
+  return () => clearInterval(interval);
+}, []); // empty deps — interval never resets
+```
+
+**Calendar visibility toggle** does NOT trigger a refetch. Events are already in memory — `fcEvents` filters client-side on render.
+
+**Event color** — Google hex color + `CC` suffix for ~80% opacity (full saturation is too bright):
+```tsx
+backgroundColor: (calendars.find(c => c.id === e.calendarId)?.backgroundColor ?? "#4285F4") + "CC"
+```
 
 ### 5.7 Write Operations
 
@@ -254,18 +279,22 @@ On load + every 5 minutes (`plugin.registerInterval`):
 
 ### 5.9 FullCalendar Config Notes
 
-**Height fix:**
+**Height fix — CalendarPanel uses flex column layout:**
 ```tsx
-<div style={{ height: "100%", overflow: "hidden" }}>
-  <FullCalendar height="100%" ... />
+<div style={{ height: "100%", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+  <div style={{ flexShrink: 0 }}> {/* header */} </div>
+  <div style={{ flex: 1, overflow: "hidden" }}>
+    <FullCalendar height="100%" ... />
+  </div>
 </div>
 ```
-Plus in CSS: `.view-content { height: 100%; }`
 
 **3-day view:**
 ```tsx
 views={{ threeDays: { type: "timeGrid", duration: { days: 3 } } }}
 ```
+
+**First day of week:** `firstDay={1}` (Monday)
 
 ---
 
@@ -277,12 +306,13 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 ### Theming (CSS Variables)
 | Obsidian variable | Used for |
 |---|---|
-| `--background-primary` | Calendar background |
-| `--background-secondary` | Time slot background |
+| `--background-primary` | Calendar background, dropdown background |
+| `--background-secondary` | Time slot background, hover state |
 | `--text-normal` | Event text, time labels |
-| `--text-muted` | Faint labels, borders |
+| `--text-muted` | Faint labels, borders, disabled states |
 | `--interactive-accent` | Today highlight |
-| `--background-modifier-border` | Grid lines |
+| `--background-modifier-border` | Grid lines, dropdown border |
+| `--text-error` | Error messages |
 
 ### manifest.json
 ```json
@@ -339,18 +369,19 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - [x] `reloadCredentials()` on main.ts — called after credential changes so API instance stays current
 - [x] Multi-account support — confirmed working, accounts stack correctly in data.json
 
-### Phase 3 — Read Data ← NEXT
-- [ ] Build `CalendarContext.tsx` — useReducer with SET_EVENTS, SET_CALENDARS, TOGGLE_CALENDAR, SET_VIEW, SET_DATE
-- [ ] Add calendar list fetch to `GoogleCalendarAPI.ts` (`GET /calendar/v3/users/me/calendarList`)
-- [ ] Add events fetch to `GoogleCalendarAPI.ts` (`GET /calendar/v3/calendars/{id}/events`)
-- [ ] Build `utils/dedup.ts` — deduplicate by `iCalUID`
-- [ ] Wire fetching into `CalendarPanel.tsx` via context
-- [ ] Render events in FullCalendar with resolved colors
-- [ ] Calendar show/hide toggles (`CalendarToggle.tsx`)
-- [ ] 5-min polling via `plugin.registerInterval`
-- [ ] Manual refresh button in CalendarPanel header
+### Phase 3 — Read Data ✅ DONE
+- [x] Build `CalendarContext.tsx` — useReducer with SET_EVENTS, SET_CALENDARS, TOGGLE_CALENDAR, SET_VIEW, SET_DATE, SET_LOADING, SET_ERROR
+- [x] Add `getCalendarList()` to `GoogleCalendarAPI.ts`
+- [x] Add `getEvents()` to `GoogleCalendarAPI.ts` — encodeURIComponent on calendarId, filter cancelled events
+- [x] Build `utils/dedup.ts` — deduplicate by `iCalUID`
+- [x] Wire fetching into `CalendarPanel.tsx` via context — fetchAllRef pattern for stale closure safety
+- [x] Render events in FullCalendar with resolved colors (hex + CC opacity)
+- [x] Calendar show/hide toggles (`CalendarToggle.tsx`) — grouped by account, colored dots, dropdown
+- [x] 5-min polling via setInterval in CalendarPanel
+- [x] Manual refresh button in CalendarPanel header
+- [x] firstDay=1 (Monday) set on FullCalendar
 
-### Phase 4 — Write Operations
+### Phase 4 — Write Operations ← NEXT
 - [ ] Drag-to-move → PATCH (`sendUpdates=none`)
 - [ ] Revert on API error
 - [ ] Edit modal → PUT
@@ -386,7 +417,7 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | Port 42813 in use | Scan 42813–42817, register all in GCP |
 | Shared calendar dedup | Deduplicate by `iCalUID` before render |
 | Token refresh race | Refresh lock pattern in `GoogleCalendarAPI.ts` |
-| FullCalendar 0-height render | Explicit `height="100%"` + parent CSS required |
+| FullCalendar 0-height render | Flex column layout — header flexShrink:0, FC wrapper flex:1 |
 | Plugin store review | `isDesktopOnly: true`, no remote code, no data collection |
 
 ---
@@ -408,6 +439,11 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | TokenStore location | `auth/` folder | Manages auth credentials, not API calls |
 | OAuth scope | `calendar` + `userinfo.email` | userinfo.email needed to fetch account email after token exchange |
 | refreshPromises type | `Map<string, Promise<void>>` | Independent refresh locks per account |
+| accounts in context | Not included — read from plugin.data directly | Accounts only needed at fetch time, not reactive UI state |
+| Interval stale closure | fetchAllRef pattern | Avoids resetting interval on state change while always using latest closure |
+| Event color opacity | Hex + "CC" suffix | Google colors at full saturation are too bright against Obsidian UI |
+| Calendar toggle refetch | No refetch on toggle | Events already in memory, filter client-side |
+| Week start | firstDay=1 | Monday start matches AU/EU convention |
 
 ---
 
@@ -418,10 +454,11 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - GCP setup: DONE
 - Phase 1: DONE
 - Phase 2: DONE
-- Phase 3: NOT STARTED
+- Phase 3: DONE
+- Phase 4: NOT STARTED
 
-### Immediate Next Steps (Phase 3)
+### Immediate Next Steps (Phase 4)
 
 1. Start new thread with this doc attached
 2. Paste current `CalendarPanel.tsx` at the top of the new thread
-3. Build `CalendarContext.tsx` first — everything in Phase 3 plugs into it
+3. First task: drag-to-move with `eventDrop` callback on FullCalendar → PATCH + revert on error
