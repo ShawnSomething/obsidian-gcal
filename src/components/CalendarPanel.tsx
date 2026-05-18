@@ -8,6 +8,7 @@ import { useCalendar, CalEvent } from "../context/CalendarContext";
 import { deduplicateEvents } from "../utils/dedup";
 import CalendarToggle from "./CalendarToggle";
 import EventModal from "./EventModal";
+import { RecurringModal } from "./RecurringModal";
 import enAU from "@fullcalendar/core/locales/en-au";
 
 interface Props {
@@ -33,9 +34,17 @@ function getViewWindow(date: Date, view: "day" | "3day" | "week"): { timeMin: Da
 export default function CalendarPanel({ plugin }: Props) {
   const { state, dispatch } = useCalendar();
   const [editingEvent, setEditingEvent] = useState<CalEvent | null>(null);
+  const [recurringModalState, setRecurringModalState] = useState<{
+    event: CalEvent;
+    resolve: (choice: "this" | "following" | null) => void;
+  } | null>(null);
 
-  // Ref pattern — interval always calls the latest version of fetchAll
-  // without needing to reset the interval when state changes
+  const askRecurring = (event: CalEvent): Promise<"this" | "following" | null> => {
+    return new Promise((resolve) => {
+      setRecurringModalState({ event, resolve });
+    });
+  };
+
   const fetchAllRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
   fetchAllRef.current = async () => {
@@ -52,7 +61,6 @@ export default function CalendarPanel({ plugin }: Props) {
         )
       ).flat();
 
-      // Preserve existing visibility when re-fetching
       const merged = allCalendars.map((cal) => {
         const existing = state.calendars.find((c) => c.id === cal.id);
         return existing ? { ...cal, visible: existing.visible } : cal;
@@ -82,20 +90,15 @@ export default function CalendarPanel({ plugin }: Props) {
     }
   };
 
-  // Refetch when date or view changes
   useEffect(() => {
     fetchAllRef.current?.();
   }, [state.selectedDate, state.activeView]);
 
-  // 5-min polling — empty deps so interval never resets
-  // fetchAllRef.current always points to latest closure
   useEffect(() => {
     const interval = setInterval(() => fetchAllRef.current?.(), 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
-  // Map context events to FullCalendar format
-  // Visibility filtering happens here, not in fetch — no refetch needed on toggle
   const fcEvents = state.events
     .filter((e) => state.calendars.find((c) => c.id === e.calendarId)?.visible ?? false)
     .map((e) => ({
@@ -174,6 +177,39 @@ export default function CalendarPanel({ plugin }: Props) {
               return;
             }
 
+            // Recurring event — ask before writing
+            if (calEvent.recurringEventId) {
+              const choice = await askRecurring(calEvent);
+              if (!choice) {
+                info.revert();
+                return;
+              }
+
+              if (choice === "this") {
+                try {
+                  await plugin.api.patchEventTimes(
+                    account,
+                    calEvent.calendarId,
+                    calEvent.id,
+                    info.event.startStr,
+                    info.event.endStr
+                  );
+                } catch (err) {
+                  info.revert();
+                  dispatch({ type: "SET_ERROR", payload: `Failed to move event: ${(err as Error).message}` });
+                }
+              } else if (choice === "following") {
+                // TODO: split series
+                // 1. PATCH master RRULE with UNTIL = day before this instance
+                // 2. POST new event series from this instance forward
+                console.warn("'This and following' not yet implemented");
+                info.revert();
+              }
+
+              return;
+            }
+
+            // Non-recurring — patch directly
             try {
               await plugin.api.patchEventTimes(
                 account,
@@ -200,6 +236,7 @@ export default function CalendarPanel({ plugin }: Props) {
       {editingEvent && (
         <EventModal
           event={editingEvent}
+          askRecurring={askRecurring}
           onClose={() => setEditingEvent(null)}
           onSave={async (updates) => {
             const account = plugin.data.accounts.find(
@@ -221,6 +258,16 @@ export default function CalendarPanel({ plugin }: Props) {
                 payload: `Failed to save event: ${(err as Error).message}`,
               });
             }
+          }}
+        />
+      )}
+
+      {recurringModalState && (
+        <RecurringModal
+          eventTitle={recurringModalState.event.title}
+          onChoice={(choice) => {
+            recurringModalState.resolve(choice);
+            setRecurringModalState(null);
           }}
         />
       )}

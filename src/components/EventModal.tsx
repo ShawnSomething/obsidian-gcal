@@ -3,6 +3,7 @@ import { CalEvent } from "../context/CalendarContext";
 
 interface Props {
   event: CalEvent;
+  askRecurring: (event: CalEvent) => Promise<"this" | "following" | null>;
   onSave: (updates: { title: string; start: string; end: string; allDay: boolean }) => void;
   onClose: () => void;
 }
@@ -13,45 +14,40 @@ function toLocalInput(isoString: string): string {
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
-function getTimezoneOffset(isoString: string): string {
-  const match = isoString.match(/(Z|[+-]\d{2}:\d{2})$/);
-  return match?.[1] ?? "Z";
-}
-
-export default function EventModal({ event, onSave, onClose }: Props) {
+export default function EventModal({ event, askRecurring, onSave, onClose }: Props) {
   const [title, setTitle] = useState(event.title);
   const [start, setStart] = useState(toLocalInput(event.start));
   const [end, setEnd] = useState(toLocalInput(event.end));
   const [allDay, setAllDay] = useState(event.allDay);
 
-  const tzOffset = getTimezoneOffset(event.start);
+  const handleSave = async () => {
+    const updates = {
+      title,
+      start: new Date(start).toISOString(),
+      end: new Date(end).toISOString(),
+      allDay,
+    };
+
+    if (event.recurringEventId) {
+      const choice = await askRecurring(event);
+      if (!choice) return;
+
+      if (choice === "following") {
+        console.warn("'This and following' not yet implemented");
+        return;
+      }
+    }
+
+    onSave(updates);
+  };
 
   return (
-    <div style={{
-      position: "fixed",
-      inset: 0,
-      background: "rgba(0,0,0,0.5)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      zIndex: 1000,
-    }}>
-      <div style={{
-        background: "var(--background-primary)",
-        border: "1px solid var(--background-modifier-border)",
-        borderRadius: "8px",
-        padding: "20px",
-        width: "360px",
-        display: "flex",
-        flexDirection: "column",
-        gap: "12px",
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontWeight: 600, color: "var(--text-normal)" }}>Edit Event</span>
-          <button
-            onClick={onClose}
-            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}
-          >✕</button>
+    <div className="gcal-modal-backdrop" onClick={onClose}>
+      <div className="gcal-modal" onClick={(e) => e.stopPropagation()}>
+
+        <div className="gcal-modal-header">
+          <span className="gcal-modal-title">Edit Event</span>
+          <button className="gcal-modal-close" onClick={onClose}>✕</button>
         </div>
 
         <input
@@ -59,18 +55,10 @@ export default function EventModal({ event, onSave, onClose }: Props) {
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Event title"
-          style={{
-            background: "var(--background-secondary)",
-            border: "1px solid var(--background-modifier-border)",
-            borderRadius: "4px",
-            padding: "6px 8px",
-            color: "var(--text-normal)",
-            width: "100%",
-            boxSizing: "border-box",
-          }}
+          className="gcal-input"
         />
 
-        <label style={{ display: "flex", alignItems: "center", gap: "8px", color: "var(--text-normal)" }}>
+        <label className="gcal-checkbox-label">
           <input
             type="checkbox"
             checked={allDay}
@@ -81,77 +69,33 @@ export default function EventModal({ event, onSave, onClose }: Props) {
 
         {!allDay && (
           <>
-            <label style={{ color: "var(--text-muted)", fontSize: "12px" }}>
+            <label className="gcal-field-label">
               Start
               <input
                 type="datetime-local"
                 value={start}
                 onChange={(e) => setStart(e.target.value)}
-                style={{
-                  display: "block",
-                  marginTop: "4px",
-                  background: "var(--background-secondary)",
-                  border: "1px solid var(--background-modifier-border)",
-                  borderRadius: "4px",
-                  padding: "6px 8px",
-                  color: "var(--text-normal)",
-                  width: "100%",
-                  boxSizing: "border-box",
-                }}
+                className="gcal-input"
               />
             </label>
 
-            <label style={{ color: "var(--text-muted)", fontSize: "12px" }}>
+            <label className="gcal-field-label">
               End
               <input
                 type="datetime-local"
                 value={end}
                 onChange={(e) => setEnd(e.target.value)}
-                style={{
-                  display: "block",
-                  marginTop: "4px",
-                  background: "var(--background-secondary)",
-                  border: "1px solid var(--background-modifier-border)",
-                  borderRadius: "4px",
-                  padding: "6px 8px",
-                  color: "var(--text-normal)",
-                  width: "100%",
-                  boxSizing: "border-box",
-                }}
+                className="gcal-input"
               />
             </label>
           </>
         )}
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
-          <button
-            onClick={onClose}
-            style={{
-              background: "none",
-              border: "1px solid var(--background-modifier-border)",
-              borderRadius: "4px",
-              padding: "6px 12px",
-              cursor: "pointer",
-              color: "var(--text-normal)",
-            }}
-          >Cancel</button>
-          <button
-            onClick={() => onSave({
-              title,
-              start: new Date(start).toISOString(),
-              end: new Date(end).toISOString(),
-              allDay,
-            })}
-            style={{
-              background: "var(--interactive-accent)",
-              border: "none",
-              borderRadius: "4px",
-              padding: "6px 12px",
-              cursor: "pointer",
-              color: "white",
-            }}
-          >Save</button>
+        <div className="gcal-modal-footer">
+          <button className="gcal-modal-cancel" onClick={onClose}>Cancel</button>
+          <button className="gcal-btn-primary" onClick={handleSave}>Save</button>
         </div>
+
       </div>
     </div>
   );
