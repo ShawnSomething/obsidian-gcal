@@ -4,8 +4,9 @@ export function deduplicateEvents(events: CalEvent[]): CalEvent[] {
     const seen = new Map<string, CalEvent>();
 
     for (const event of events) {
-        if (!seen.has(event.iCalUID)) {
-            seen.set(event.iCalUID, event);
+        const key = `${event.iCalUID}::${event.start}`;
+        if (!seen.has(key)) {
+            seen.set(key, event);
         }
     }
 
