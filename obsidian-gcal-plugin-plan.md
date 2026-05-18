@@ -243,7 +243,7 @@ On load + every 5 minutes (setInterval in CalendarPanel useEffect):
    - `timeMin/timeMax` = current view window
    - `singleEvents=true`
    - `maxResults=250`
-4. Merge all events, deduplicate by `iCalUID`
+4. Merge all events, deduplicate by `iCalUID + start` (not `iCalUID` alone — recurring instances share `iCalUID` but have different `start` values)
 5. Dispatch `SET_EVENTS`
 6. On view date change → refetch immediately
 
@@ -373,7 +373,7 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - [x] Build `CalendarContext.tsx` — useReducer with SET_EVENTS, SET_CALENDARS, TOGGLE_CALENDAR, SET_VIEW, SET_DATE, SET_LOADING, SET_ERROR
 - [x] Add `getCalendarList()` to `GoogleCalendarAPI.ts`
 - [x] Add `getEvents()` to `GoogleCalendarAPI.ts` — encodeURIComponent on calendarId, filter cancelled events
-- [x] Build `utils/dedup.ts` — deduplicate by `iCalUID`
+- [x] Build `utils/dedup.ts` — deduplicate by `iCalUID + start` (bug fix: `iCalUID` alone drops recurring instances)
 - [x] Wire fetching into `CalendarPanel.tsx` via context — fetchAllRef pattern for stale closure safety
 - [x] Render events in FullCalendar with resolved colors (hex + CC opacity)
 - [x] Calendar show/hide toggles (`CalendarToggle.tsx`) — grouped by account, colored dots, dropdown
@@ -443,6 +443,7 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | Interval stale closure | fetchAllRef pattern | Avoids resetting interval on state change while always using latest closure |
 | Event color opacity | Hex + "CC" suffix | Google colors at full saturation are too bright against Obsidian UI |
 | Calendar toggle refetch | No refetch on toggle | Events already in memory, filter client-side |
+| Deduplication key | `iCalUID + start` | `iCalUID` alone drops recurring instances — all share the same iCalUID, only start differs per occurrence |
 | Week start | firstDay=1 | Monday start matches AU/EU convention |
 
 ---

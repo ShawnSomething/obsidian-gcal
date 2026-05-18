@@ -180,7 +180,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 523.5
+    "width": 531.5
   },
   "left-ribbon": {
     "hiddenItems": {
@@ -194,7 +194,7 @@
       "sample-plugin:Google Calendar": false
     }
   },
-  "active": "3c573448376ef50a",
+  "active": "e00a06e4c4f58e77",
   "lastOpenFiles": [
     "Untitled.base",
     "Welcome.md"
