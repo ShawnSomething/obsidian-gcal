@@ -88,14 +88,14 @@ obsidian-gcal/
 │   │   ├── CalendarToggle.tsx    ← Show/hide individual calendars, grouped by account ✓ DONE
 │   │   ├── MiniMonth.tsx         ← Mini month navigation widget
 │   │   ├── EventModal.tsx        ← Edit modal ✓ DONE
-│   │   └── RecurringModal.tsx    ← "This / Following / All" choice — NOT BUILT YET
+│   │   └── RecurringModal.tsx    ← "This / This & Following" choice ✓ DONE
 │   ├── settings/
 │   │   └── SettingsTab.ts        ← Obsidian PluginSettingTab (account management)
 │   ├── auth/
 │   │   ├── OAuthManager.ts       ← OAuth PKCE flow per account ✓ DONE
 │   │   └── TokenStore.ts         ← Read/write tokens via plugin.saveData() ✓ DONE
 │   ├── api/
-│   │   ├── GoogleCalendarAPI.ts  ← All API calls with auto-refresh ✓ DONE
+│   │   ├── GoogleCalendarAPI.ts  ← All API calls with auto-refresh ✓ DONE (getEvent + splitRecurringSeries added)
 │   │   └── types.ts              ← TypeScript types for all Google API shapes ✓ DONE
 │   └── utils/
 │       └── dedup.ts              ← Event deduplication by iCalUID ✓ DONE
@@ -403,7 +403,14 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - [x] Edit modal (`EventModal.tsx`) → `putEvent()` PUT `sendUpdates=all` — DONE
 - [x] Timezone fix in EventModal — `toLocalInput()` for display, `new Date(str).toISOString()` on save
 - [x] Locale fix — `locale={enAU}` for DD/MM date format
-- [ ] RecurringModal — "This / This & Following / All" — wire into both `eventDrop` and `EventModal` save
+- [x] All inline styles moved to `styles.css` — EventModal and RecurringModal use shared gcal- classes
+- [x] RecurringModal.tsx built — "This event" and "This and following" only (no "All events" — UX decision)
+- [x] RecurringModal wired into `eventDrop` and `EventModal` save via Promise-based `askRecurring` pattern
+- [x] `splitRecurringSeries()` added to `GoogleCalendarAPI.ts` — fetches master RRULE, sets UNTIL, POSTs new series, rollback on partial failure
+- [x] `getEvent()` added to `GoogleCalendarAPI.ts`
+- [x] `UPDATE_EVENT` action added to CalendarContext reducer — optimistic update without refetch
+- [ ] **BUG: EventModal save duplicates event** — `putEvent` succeeds, optimistic UPDATE_EVENT dispatched, but duplicate still appears. Tried: refetch after save (Google returns stale data), `state.events.map` in closure (stale closure), `UPDATE_EVENT` reducer action (still failing). Root cause not yet confirmed — suspect FullCalendar controlled/uncontrolled event conflict. **Needs investigation in new thread.**
+- [ ] **BUG: Resize snaps back** — no `eventResize` handler exists. FullCalendar reverts resize without one. Handler written but not yet added — deferred. Same structure as `eventDrop`, needs `askRecurring` check for recurring events.
 - [ ] Create event — `dateClick` on empty slot → POST → refetch
 
 ### Phase 5 — Accept / Reject
@@ -442,6 +449,9 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | FullCalendar 0-height render | Flex column layout — header flexShrink:0, FC wrapper flex:1 |
 | Plugin store review | `isDesktopOnly: true`, no remote code, no data collection |
 | Timezone in EventModal | datetime-local has no tz awareness — use toLocalInput() for display, new Date().toISOString() on save |
+| Google API stale reads after write | Immediate GET after PATCH/PUT can return old data — use optimistic context update instead of refetch |
+| FullCalendar controlled/uncontrolled conflict | Feeding `events` prop after FC has internally moved an event causes duplicates — optimistic UPDATE_EVENT is the correct pattern, but duplication bug on EventModal save is unresolved |
+| splitRecurringSeries partial failure | PATCH master succeeds, POST new series fails → rollback PATCH attempted. If rollback also fails, user is told to check Google Calendar directly |
 
 ---
 
@@ -471,6 +481,10 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | Locale | enAU from @fullcalendar/core/locales/en-au | DD/MM date format, non-US |
 | EventModal timezone | toLocalInput() + new Date().toISOString() | datetime-local has no tz awareness; manual offset reattachment causes double-shift bug |
 | EventModal fields (v1) | Title, start, end, all-day only | Guests/location/description require full event fetch — deferred to later phase |
+| Recurring modal options | "This event" + "This and following" only — no "All events" | "All events" is the destructive option users avoid; "this and following" is the natural UX choice |
+| RecurringModal state pattern | Promise-based askRecurring in CalendarPanel | Single state location, clean callers — both eventDrop and EventModal await the same function |
+| Styles | All styles in styles.css using gcal- prefixed classes | No inline styles — shared classes (gcal-modal-backdrop, gcal-input, etc.) reused across components |
+| Post-write state sync | Optimistic UPDATE_EVENT dispatch, not refetch | Google API returns stale data on immediate GET after PATCH/PUT — refetch causes duplicates |
 
 ---
 
@@ -486,7 +500,6 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 
 ### Immediate Next Steps
 
-1. Build `RecurringModal.tsx` — three options: This event / This and following / All events
-2. Wire into `eventDrop`: check `calEvent.recurringEventId` before calling `patchEventTimes` — if present, show modal first
-3. Wire into `EventModal` save handler: same check before calling `putEvent`
-4. After RecurringModal: create event flow (`dateClick` → POST → refetch)
+1. **Fix EventModal save duplication bug** — `putEvent` succeeds and `UPDATE_EVENT` is dispatched but a duplicate event still appears in the calendar. Suspect FullCalendar is holding internal event state that conflicts with the controlled `events` prop after a save. Investigate whether calling `info.event.remove()` or using an uncontrolled FullCalendar ref approach resolves it.
+2. **Add `eventResize` handler** to `CalendarPanel` — same structure as `eventDrop`. Check `recurringEventId`, call `askRecurring`, patch times or split series. Non-recurring: direct `patchEventTimes`. Code already written, just needs adding to `<FullCalendar>`.
+3. **Create event flow** — `dateClick` on empty slot → open EventModal in create mode → POST → refetch
