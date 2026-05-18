@@ -87,8 +87,8 @@ obsidian-gcal/
 │   │   ├── CalendarPanel.tsx     ← FullCalendar config + fetch logic + header ✓ DONE
 │   │   ├── CalendarToggle.tsx    ← Show/hide individual calendars, grouped by account ✓ DONE
 │   │   ├── MiniMonth.tsx         ← Mini month navigation widget
-│   │   ├── EventModal.tsx        ← Create / edit modal
-│   │   └── RecurringModal.tsx    ← "This / Following / All" choice
+│   │   ├── EventModal.tsx        ← Edit modal ✓ DONE
+│   │   └── RecurringModal.tsx    ← "This / Following / All" choice — NOT BUILT YET
 │   ├── settings/
 │   │   └── SettingsTab.ts        ← Obsidian PluginSettingTab (account management)
 │   ├── auth/
@@ -271,11 +271,26 @@ backgroundColor: (calendars.find(c => c.id === e.calendarId)?.backgroundColor ??
 **Create event:** `POST`, `sendUpdates=all`.
 **Accept/Decline:** `PATCH` attendees array (must send full array).
 
+**Timezone handling in EventModal:**
+- `datetime-local` inputs have no timezone awareness — always work in local time
+- `toLocalInput(isoString)` converts UTC ISO string to local time for display
+- On save: `new Date(localString).toISOString()` converts back correctly — do NOT manually reattach timezone offset
+
+```typescript
+function toLocalInput(isoString: string): string {
+  const date = new Date(isoString);
+  const offset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+```
+
 ### 5.8 Recurring Event Write Patterns
 
 - **This event only** — PATCH/PUT the instance ID directly
 - **This and following** — Split series: modify master RRULE + POST new series
 - **All events** — PATCH/PUT the master event via `recurringEventId`
+
+Recurring instance IDs have a `_YYYYMMDDTHHMMSSZ` suffix (e.g. `bd8d1298a0d94760_20260522T214500Z`). Check for `calEvent.recurringEventId` to detect recurring instances before writing.
 
 ### 5.9 FullCalendar Config Notes
 
@@ -295,6 +310,8 @@ views={{ threeDays: { type: "timeGrid", duration: { days: 3 } } }}
 ```
 
 **First day of week:** `firstDay={1}` (Monday)
+
+**Locale:** `locale={enAU}` — import from `@fullcalendar/core/locales/en-au`. Gives DD/MM date format.
 
 ---
 
@@ -381,12 +398,13 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - [x] Manual refresh button in CalendarPanel header
 - [x] firstDay=1 (Monday) set on FullCalendar
 
-### Phase 4 — Write Operations ← NEXT
-- [ ] Drag-to-move → PATCH (`sendUpdates=none`)
-- [ ] Revert on API error
-- [ ] Edit modal → PUT
-- [ ] Create modal → POST
-- [ ] RecurringModal with correct API pattern per scope choice
+### Phase 4 — Write Operations 🔄 IN PROGRESS
+- [x] Drag-to-move → `patchEventTimes()` PATCH `sendUpdates=none`, revert on error — DONE
+- [x] Edit modal (`EventModal.tsx`) → `putEvent()` PUT `sendUpdates=all` — DONE
+- [x] Timezone fix in EventModal — `toLocalInput()` for display, `new Date(str).toISOString()` on save
+- [x] Locale fix — `locale={enAU}` for DD/MM date format
+- [ ] RecurringModal — "This / This & Following / All" — wire into both `eventDrop` and `EventModal` save
+- [ ] Create event — `dateClick` on empty slot → POST → refetch
 
 ### Phase 5 — Accept / Reject
 - [ ] Show response buttons when `selfResponseStatus === "needsAction"`
@@ -397,6 +415,10 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - [ ] View toggle (Day / 3D / Week) using FullCalendar API
 - [ ] Open in browser button (`htmlLink`)
 - [ ] Obsidian CSS variable mapping for dark/light theme
+- [ ] Update `EventModal.tsx` with full event capabilties: title, date, start, end, recurring, all day, add guest, location, description, what calendar to add to
+- [ ] click to view existing event details
+- [ ] click video call link to launch url in browser
+- [ ] add main timezone picker
 
 ### Phase 7 — Publish Prep
 - [ ] Error handling + user-facing messages for all failure cases
@@ -419,6 +441,7 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | Token refresh race | Refresh lock pattern in `GoogleCalendarAPI.ts` |
 | FullCalendar 0-height render | Flex column layout — header flexShrink:0, FC wrapper flex:1 |
 | Plugin store review | `isDesktopOnly: true`, no remote code, no data collection |
+| Timezone in EventModal | datetime-local has no tz awareness — use toLocalInput() for display, new Date().toISOString() on save |
 
 ---
 
@@ -445,6 +468,9 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | Calendar toggle refetch | No refetch on toggle | Events already in memory, filter client-side |
 | Deduplication key | `iCalUID + start` | `iCalUID` alone drops recurring instances — all share the same iCalUID, only start differs per occurrence |
 | Week start | firstDay=1 | Monday start matches AU/EU convention |
+| Locale | enAU from @fullcalendar/core/locales/en-au | DD/MM date format, non-US |
+| EventModal timezone | toLocalInput() + new Date().toISOString() | datetime-local has no tz awareness; manual offset reattachment causes double-shift bug |
+| EventModal fields (v1) | Title, start, end, all-day only | Guests/location/description require full event fetch — deferred to later phase |
 
 ---
 
@@ -456,10 +482,11 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - Phase 1: DONE
 - Phase 2: DONE
 - Phase 3: DONE
-- Phase 4: NOT STARTED
+- Phase 4: IN PROGRESS
 
-### Immediate Next Steps (Phase 4)
+### Immediate Next Steps
 
-1. Start new thread with this doc attached
-2. Paste current `CalendarPanel.tsx` at the top of the new thread
-3. First task: drag-to-move with `eventDrop` callback on FullCalendar → PATCH + revert on error
+1. Build `RecurringModal.tsx` — three options: This event / This and following / All events
+2. Wire into `eventDrop`: check `calEvent.recurringEventId` before calling `patchEventTimes` — if present, show modal first
+3. Wire into `EventModal` save handler: same check before calling `putEvent`
+4. After RecurringModal: create event flow (`dateClick` → POST → refetch)
