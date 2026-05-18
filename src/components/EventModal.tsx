@@ -5,6 +5,7 @@ interface Props {
   event: CalEvent;
   askRecurring: (event: CalEvent) => Promise<"this" | "following" | null>;
   onSave: (updates: { title: string; start: string; end: string; allDay: boolean }) => void;
+  onSplitSeries: (updates: { title: string; start: string; end: string; allDay: boolean }) => void;
   onClose: () => void;
 }
 
@@ -14,7 +15,7 @@ function toLocalInput(isoString: string): string {
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
 
-export default function EventModal({ event, askRecurring, onSave, onClose }: Props) {
+export default function EventModal({ event, askRecurring, onSave, onSplitSeries, onClose }: Props) {
   const [title, setTitle] = useState(event.title);
   const [start, setStart] = useState(toLocalInput(event.start));
   const [end, setEnd] = useState(toLocalInput(event.end));
@@ -33,7 +34,7 @@ export default function EventModal({ event, askRecurring, onSave, onClose }: Pro
       if (!choice) return;
 
       if (choice === "following") {
-        console.warn("'This and following' not yet implemented");
+        onSplitSeries(updates);
         return;
       }
     }

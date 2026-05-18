@@ -69,6 +69,7 @@ type Action =
   | { type: "SET_VIEW"; payload: ViewType }
   | { type: "SET_DATE"; payload: Date }
   | { type: "SET_LOADING"; payload: boolean }
+  | { type: "UPDATE_EVENT"; payload: { id: string; changes: Partial<CalEvent> } }
   | { type: "SET_ERROR"; payload: string | null };
 
 // ─── Reducer ─────────────────────────────────────────────────────────────────
@@ -96,6 +97,14 @@ function calendarReducer(state: CalendarState, action: Action): CalendarState {
 
     case "SET_DATE":
       return { ...state, selectedDate: action.payload };
+    
+      case "UPDATE_EVENT":
+        return {
+          ...state,
+          events: state.events.map((e) =>
+            e.id === action.payload.id ? { ...e, ...action.payload.changes } : e
+          ),
+        };
 
     case "SET_LOADING":
       return { ...state, isLoading: action.payload };

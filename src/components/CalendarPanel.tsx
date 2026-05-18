@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import dayGridPlugin from "@fullcalendar/daygrid";
@@ -46,6 +46,8 @@ export default function CalendarPanel({ plugin }: Props) {
   };
 
   const fetchAllRef = useRef<(() => Promise<void>) | undefined>(undefined);
+
+  const calendarRef = useRef<FullCalendar>(null);
 
   fetchAllRef.current = async () => {
     const accounts = plugin.data.accounts;
@@ -99,23 +101,28 @@ export default function CalendarPanel({ plugin }: Props) {
     return () => clearInterval(interval);
   }, []);
 
-  const fcEvents = state.events
-    .filter((e) => state.calendars.find((c) => c.id === e.calendarId)?.visible ?? false)
-    .map((e) => ({
-      id: e.id,
-      title: e.title,
-      start: e.start,
-      end: e.end,
-      allDay: e.allDay,
-      backgroundColor:
-        (state.calendars.find((c) => c.id === e.calendarId)?.backgroundColor ?? "#4285F4") + "CC",
-      borderColor: "transparent",
-      extendedProps: { calEvent: e },
-    }));
+  const fcEvents = useMemo(
+    () =>
+      state.events
+        .filter(
+          (e) => state.calendars.find((c) => c.id === e.calendarId)?.visible ?? false
+        )
+        .map((e) => ({
+          id: e.id,
+          title: e.title,
+          start: e.start,
+          end: e.end,
+          allDay: e.allDay,
+          backgroundColor:
+            (state.calendars.find((c) => c.id === e.calendarId)?.backgroundColor ?? "#4285F4") + "CC",
+          borderColor: "transparent",
+          extendedProps: { calEvent: e },
+        })),
+    [state.events, state.calendars]
+  );
 
   return (
     <div style={{ height: "100%", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-      {/* Header */}
       <div style={{
         display: "flex",
         justifyContent: "flex-end",
@@ -155,6 +162,7 @@ export default function CalendarPanel({ plugin }: Props) {
 
       <div style={{ flex: 1, overflow: "hidden" }}>
         <FullCalendar
+          ref={calendarRef}
           plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
           initialView={VIEW_MAP[state.activeView]}
           height="100%"
@@ -177,7 +185,6 @@ export default function CalendarPanel({ plugin }: Props) {
               return;
             }
 
-            // Recurring event — ask before writing
             if (calEvent.recurringEventId) {
               const choice = await askRecurring(calEvent);
               if (!choice) {
@@ -194,22 +201,34 @@ export default function CalendarPanel({ plugin }: Props) {
                     info.event.startStr,
                     info.event.endStr
                   );
+                  await fetchAllRef.current?.();
                 } catch (err) {
                   info.revert();
                   dispatch({ type: "SET_ERROR", payload: `Failed to move event: ${(err as Error).message}` });
                 }
               } else if (choice === "following") {
-                // TODO: split series
-                // 1. PATCH master RRULE with UNTIL = day before this instance
-                // 2. POST new event series from this instance forward
-                console.warn("'This and following' not yet implemented");
-                info.revert();
+                try {
+                  await plugin.api.splitRecurringSeries(
+                    account,
+                    calEvent.calendarId,
+                    calEvent,
+                    {
+                      start: info.event.startStr,
+                      end: info.event.endStr,
+                      title: calEvent.title,
+                      allDay: calEvent.allDay,
+                    }
+                  );
+                  await fetchAllRef.current?.();
+                } catch (err) {
+                  info.revert();
+                  dispatch({ type: "SET_ERROR", payload: `Failed to split series: ${(err as Error).message}` });
+                }
               }
 
               return;
             }
 
-            // Non-recurring — patch directly
             try {
               await plugin.api.patchEventTimes(
                 account,
@@ -218,6 +237,7 @@ export default function CalendarPanel({ plugin }: Props) {
                 info.event.startStr,
                 info.event.endStr
               );
+              await fetchAllRef.current?.();
             } catch (err) {
               info.revert();
               dispatch({
@@ -250,12 +270,53 @@ export default function CalendarPanel({ plugin }: Props) {
                 editingEvent.id,
                 updates
               );
+              const calApi = calendarRef.current?.getApi();
+              const fcEvent = calApi?.getEventById(editingEvent.id);
+
+              if (fcEvent) {
+                fcEvent.setProp('title', updates.title);
+                fcEvent.setStart(updates.start);
+                fcEvent.setEnd(updates.end ?? '');
+                if (updates.allDay !== undefined) fcEvent.setAllDay(updates.allDay);
+              }
+              dispatch({
+                type: "UPDATE_EVENT",
+                payload: {
+                  id: editingEvent.id,
+                  changes: {
+                    title: updates.title,
+                    start: updates.start,
+                    end: updates.end,
+                    allDay: updates.allDay,
+                  },
+                },
+              });
+              setEditingEvent(null);
+            } catch (err) {
+              dispatch({
+                type: "SET_ERROR",
+                payload: `Failed to save event: ${(err as Error).message}`,
+              });
+            }
+          }}
+          onSplitSeries={async (updates) => {
+            const account = plugin.data.accounts.find(
+              (a) => a.accountId === editingEvent!.accountId
+            );
+            if (!account) return;
+            try {
+              await plugin.api.splitRecurringSeries(
+                account,
+                editingEvent!.calendarId,
+                editingEvent!,
+                updates
+              );
               setEditingEvent(null);
               await fetchAllRef.current?.();
             } catch (err) {
               dispatch({
                 type: "SET_ERROR",
-                payload: `Failed to save event: ${(err as Error).message}`,
+                payload: `Failed to split series: ${(err as Error).message}`,
               });
             }
           }}
