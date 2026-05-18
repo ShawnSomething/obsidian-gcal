@@ -139,6 +139,54 @@ async getEvents(
         }));
 	}
 
+	async patchEventTimes(
+		account: AccountConfig,
+		calendarId: string,
+		eventId: string,
+		start: string,
+		end: string
+		): Promise<void> {
+		const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${eventId}?sendUpdates=none`;
+
+		const response = await this.patchWithAuth(account, url, {
+			start: { dateTime: start },
+			end: { dateTime: end },
+		});
+
+		if (!response.ok) {
+			const err = await response.json();
+			throw new Error(err.error?.message ?? "Failed to update event");
+		}
+	}
+
+	async putEvent(
+		account: AccountConfig,
+		calendarId: string,
+		eventId: string,
+		updates: { title: string; start: string; end: string; allDay: boolean }
+		): Promise<void> {
+		const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${eventId}?sendUpdates=all`;
+
+		const startField = updates.allDay
+			? { date: updates.start }
+			: { dateTime: updates.start };
+
+		const endField = updates.allDay
+			? { date: updates.end }
+			: { dateTime: updates.end };
+
+		const response = await this.putWithAuth(account, url, {
+			summary: updates.title,
+			start: startField,
+			end: endField,
+		});
+
+		if (!response.ok) {
+			const err = await response.json();
+			throw new Error(err.error?.message ?? "Failed to update event");
+		}
+	}
+
 	private async ensureFreshToken(account: AccountConfig): Promise<string> {
 		// 60s buffer — refresh before it actually expires
 		if (Date.now() < account.tokenExpiry - 60_000) {

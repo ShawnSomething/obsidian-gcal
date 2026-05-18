@@ -1,12 +1,14 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import GCalPlugin from "../main";
-import { useCalendar } from "../context/CalendarContext";
+import { useCalendar, CalEvent } from "../context/CalendarContext";
 import { deduplicateEvents } from "../utils/dedup";
 import CalendarToggle from "./CalendarToggle";
+import EventModal from "./EventModal";
+import enAU from "@fullcalendar/core/locales/en-au";
 
 interface Props {
   plugin: GCalPlugin;
@@ -30,6 +32,7 @@ function getViewWindow(date: Date, view: "day" | "3day" | "week"): { timeMin: Da
 
 export default function CalendarPanel({ plugin }: Props) {
   const { state, dispatch } = useCalendar();
+  const [editingEvent, setEditingEvent] = useState<CalEvent | null>(null);
 
   // Ref pattern — interval always calls the latest version of fetchAll
   // without needing to reset the interval when state changes
@@ -153,13 +156,74 @@ export default function CalendarPanel({ plugin }: Props) {
           initialView={VIEW_MAP[state.activeView]}
           height="100%"
           events={fcEvents}
+          locale={enAU}
           views={{
             threeDays: { type: "timeGrid", duration: { days: 3 } },
           }}
           headerToolbar={false}
           firstDay={1}
+          editable={true}
+          eventDrop={async (info) => {
+            const calEvent = info.event.extendedProps.calEvent as CalEvent;
+            const account = plugin.data.accounts.find(
+              (a) => a.accountId === calEvent.accountId
+            );
+
+            if (!account) {
+              info.revert();
+              return;
+            }
+
+            try {
+              await plugin.api.patchEventTimes(
+                account,
+                calEvent.calendarId,
+                calEvent.id,
+                info.event.startStr,
+                info.event.endStr
+              );
+            } catch (err) {
+              info.revert();
+              dispatch({
+                type: "SET_ERROR",
+                payload: `Failed to move event: ${(err as Error).message}`,
+              });
+            }
+          }}
+
+          eventClick={(info) => {
+            setEditingEvent(info.event.extendedProps.calEvent as CalEvent);
+          }}
         />
       </div>
+
+      {editingEvent && (
+        <EventModal
+          event={editingEvent}
+          onClose={() => setEditingEvent(null)}
+          onSave={async (updates) => {
+            const account = plugin.data.accounts.find(
+              (a) => a.accountId === editingEvent.accountId
+            );
+            if (!account) return;
+            try {
+              await plugin.api.putEvent(
+                account,
+                editingEvent.calendarId,
+                editingEvent.id,
+                updates
+              );
+              setEditingEvent(null);
+              await fetchAllRef.current?.();
+            } catch (err) {
+              dispatch({
+                type: "SET_ERROR",
+                payload: `Failed to save event: ${(err as Error).message}`,
+              });
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
