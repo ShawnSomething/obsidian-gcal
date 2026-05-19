@@ -247,6 +247,79 @@ export default function CalendarPanel({ plugin }: Props) {
             }
           }}
 
+          eventResize={async (info) => {
+            const calEvent = info.event.extendedProps.calEvent as CalEvent;
+            const account = plugin.data.accounts.find(
+              (a) => a.accountId === calEvent.accountId
+            );
+
+            if (!account) {
+              info.revert();
+              return;
+            }
+
+            if (calEvent.recurringEventId) {
+              const choice = await askRecurring(calEvent);
+              if (!choice) {
+                info.revert();
+                return;
+              }
+
+              if (choice === "this") {
+                try {
+                  await plugin.api.patchEventTimes(
+                    account,
+                    calEvent.calendarId,
+                    calEvent.id,
+                    info.event.startStr,
+                    info.event.endStr
+                  );
+                  await fetchAllRef.current?.();
+                } catch (err) {
+                  info.revert();
+                  dispatch({ type: "SET_ERROR", payload: `Failed to resize event: ${(err as Error).message}` });
+                }
+              } else if (choice === "following") {
+                try {
+                  await plugin.api.splitRecurringSeries(
+                    account,
+                    calEvent.calendarId,
+                    calEvent,
+                    {
+                      start: info.event.startStr,
+                      end: info.event.endStr,
+                      title: calEvent.title,
+                      allDay: calEvent.allDay,
+                    }
+                  );
+                  await fetchAllRef.current?.();
+                } catch (err) {
+                  info.revert();
+                  dispatch({ type: "SET_ERROR", payload: `Failed to split series: ${(err as Error).message}` });
+                }
+              }
+
+              return;
+            }
+
+            try {
+              await plugin.api.patchEventTimes(
+                account,
+                calEvent.calendarId,
+                calEvent.id,
+                info.event.startStr,
+                info.event.endStr
+              );
+              await fetchAllRef.current?.();
+            } catch (err) {
+              info.revert();
+              dispatch({
+                type: "SET_ERROR",
+                payload: `Failed to resize event: ${(err as Error).message}`,
+              });
+            }
+          }}
+
           eventClick={(info) => {
             setEditingEvent(info.event.extendedProps.calEvent as CalEvent);
           }}
