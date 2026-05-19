@@ -21,6 +21,13 @@ Junior-level developer. Has built TSX apps but no full products.
 First Obsidian plugin. Needs principal-engineer-level guidance throughout.
 Comfortable with React/TSX. Needs Obsidian-specific patterns explained.
 
+## 2.5. Rule to follow under all circumstances
+Read the plan, identify what files needed, ask for them, then write code.
+### Bug fixes
+Read the exact error message and line number before doing anything.
+Fix only what the error points to. Do not rewrite surrounding code.
+If the fix is one line, write one line.
+
 ---
 
 ## 3. Features (Priority Order)
@@ -87,7 +94,7 @@ obsidian-gcal/
 │   │   ├── CalendarPanel.tsx     ← FullCalendar config + fetch logic + header ✓ DONE
 │   │   ├── CalendarToggle.tsx    ← Show/hide individual calendars, grouped by account ✓ DONE
 │   │   ├── MiniMonth.tsx         ← Mini month navigation widget
-│   │   ├── EventModal.tsx        ← Edit modal ✓ DONE
+│   │   ├── EventModal.tsx        ← Edit + Create modal (discriminated union Props) ✓ DONE
 │   │   └── RecurringModal.tsx    ← "This / This & Following" choice ✓ DONE
 │   ├── settings/
 │   │   └── SettingsTab.ts        ← Obsidian PluginSettingTab (account management)
@@ -95,7 +102,7 @@ obsidian-gcal/
 │   │   ├── OAuthManager.ts       ← OAuth PKCE flow per account ✓ DONE
 │   │   └── TokenStore.ts         ← Read/write tokens via plugin.saveData() ✓ DONE
 │   ├── api/
-│   │   ├── GoogleCalendarAPI.ts  ← All API calls with auto-refresh ✓ DONE (getEvent + splitRecurringSeries added)
+│   │   ├── GoogleCalendarAPI.ts  ← All API calls with auto-refresh ✓ DONE (getEvent + splitRecurringSeries + postEvent added)
 │   │   └── types.ts              ← TypeScript types for all Google API shapes ✓ DONE
 │   └── utils/
 │       └── dedup.ts              ← Event deduplication by iCalUID ✓ DONE
@@ -411,8 +418,10 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - [x] `getEvent()` added to `GoogleCalendarAPI.ts`
 - [x] `UPDATE_EVENT` action added to CalendarContext reducer — optimistic update without refetch
 - [x] **BUG FIXED: EventModal save duplicates event** — Root cause: `fcEvents` was computed inline on every render, producing a new array reference each time. FullCalendar v6 treats a new `events` prop reference as a new event source — it adds the new events without cleanly removing the previous source, causing duplicates. Fix: (1) wrap `fcEvents` in `useMemo` keyed on `[state.events, state.calendars]` to stabilise the reference, (2) use a `calendarRef` to mutate the FC event directly via `getApi().getEventById(id)` + `setProp/setStart/setEnd/setAllDay` after save — do not rely on the `events` prop to sync the visual update. Still dispatch `UPDATE_EVENT` to keep context in sync.
-- [ ] **BUG: Resize snaps back** — no `eventResize` handler exists. FullCalendar reverts resize without one. Handler written but not yet added — deferred. Same structure as `eventDrop`, needs `askRecurring` check for recurring events.
-- [ ] Create event — `dateClick` on empty slot → POST → refetch
+- [x] **BUG FIXED: Resize snaps back** — added `eventResize` handler to `CalendarPanel`. Identical structure to `eventDrop`: checks `recurringEventId`, calls `askRecurring`, patches times or splits series. Calls `fetchAllRef.current?.()` after successful write.
+- [ ] **PENDING: EventModal save still uses optimistic update** — decision made to always refetch after writes to keep state aligned with Google. EventModal `onSave` (edit mode) needs to drop `calendarRef` mutation + `UPDATE_EVENT` dispatch and call `fetchAllRef.current?.()` instead. Deferred until core functionality is complete.
+- [x] Create event — `dateClick` on empty slot → EventModal (create mode) → `postEvent()` POST `sendUpdates=all` → refetch. EventModal now uses discriminated union Props (`mode: "edit" | "create"`). Create mode shows calendar picker filtered to `accessRole === "owner" || "writer"`. Default calendar also filtered by accessRole (not just visibility). `postEvent()` added to `GoogleCalendarAPI.ts`. `accessRole` added to `CalendarMeta` and mapped in `getCalendarList()`.
+- [ ] Delete event — click event → EventModal → delete button → `deleteWithAuth()` → confirm dialog → refetch. Check `recurringEventId` and show RecurringModal first if recurring.
 
 ### Phase 5 — Accept / Reject
 - [ ] Show response buttons when `selfResponseStatus === "needsAction"`
@@ -450,9 +459,9 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | FullCalendar 0-height render | Flex column layout — header flexShrink:0, FC wrapper flex:1 |
 | Plugin store review | `isDesktopOnly: true`, no remote code, no data collection |
 | Timezone in EventModal | datetime-local has no tz awareness — use toLocalInput() for display, new Date().toISOString() on save |
-| Google API stale reads after write | Immediate GET after PATCH/PUT can return old data — use optimistic context update instead of refetch |
+| Google API stale reads after write | Immediate GET after PATCH/PUT can return old data — mitigated by short delay or relying on 5-min poll. Decision: always refetch after writes for state accuracy; flash is acceptable trade-off over stale UI. |
 | FullCalendar controlled/uncontrolled conflict | Feeding `events` prop after FC has internally moved an event causes duplicates — RESOLVED: memoize `fcEvents` with useMemo + use calendarRef.getApi() to mutate FC events directly on save instead of relying on prop re-render |
-| splitRecurringSeries partial failure | PATCH master succeeds, POST new series fails → rollback PATCH attempted. If rollback also fails, user is told to check Google Calendar directly |
+| Read-only calendars in create dropdown | Filter dropdown by `accessRole === "owner" \|\| "writer"` — `minAccessRole=reader` includes calendars the user cannot write to (e.g. AU holidays calendar) |
 | splitRecurringSeries instance override ghost | Google stores instance overrides independently of RRULE — truncating master RRULE does not delete existing overrides. RESOLVED: explicitly DELETE the original instance (Step 1.5) before POSTing new series. UNTIL must be calculated from `instance.start`, not `updates.start`. |
 
 ---
@@ -486,11 +495,14 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | Recurring modal options | "This event" + "This and following" only — no "All events" | "All events" is the destructive option users avoid; "this and following" is the natural UX choice |
 | RecurringModal state pattern | Promise-based askRecurring in CalendarPanel | Single state location, clean callers — both eventDrop and EventModal await the same function |
 | Styles | All styles in styles.css using gcal- prefixed classes | No inline styles — shared classes (gcal-modal-backdrop, gcal-input, etc.) reused across components |
-| Post-write state sync | Optimistic UPDATE_EVENT dispatch, not refetch | Google API returns stale data on immediate GET after PATCH/PUT — refetch causes duplicates |
+| Post-write state sync | Full refetch via `fetchAllRef.current?.()` after every write | Google API can return stale data on immediate GET — optimistic updates risk UI drifting from actual Google state. Flash on refetch is acceptable. Targeted single-calendar refetch is a future optimisation (deferred). |
 | FullCalendar event updates | calendarRef mutation (getEventById + setProp/setStart/setEnd) + UPDATE_EVENT dispatch | events prop re-render causes duplicates — ref mutation is the only safe way to visually update a FC event without remounting the event source |
 | fcEvents memoization | useMemo keyed on [state.events, state.calendars] | Inline computation produces new array reference every render — FC treats each new reference as a new event source |
 | splitRecurringSeries UNTIL source | Use `instance.start`, not `updates.start` | UNTIL must reflect the original occurrence time the master series knows about, not the user's edited time |
-| splitRecurringSeries instance cleanup | DELETE original instance after patching master, before POSTing new series | Google stores instance overrides independently of RRULE — UNTIL truncation alone doesn't remove them |
+| EventModal modes | Discriminated union `type Props = EditProps | CreateProps` | Clean separation — create mode drops askRecurring/onSplitSeries entirely. TypeScript only narrows discriminated unions via direct `props.mode === "x"` checks — derived booleans (`isCreate`) and `as` casts do NOT narrow |
+| Calendar write filter | Filter by `accessRole === "owner" \|\| "writer"` in create modal dropdown | `minAccessRole=reader` returns all visible calendars including read-only — must filter for write operations. Default calendar selection must also use this filter, not just visibility |
+| accessRole storage | Added to `CalendarMeta`, mapped in `getCalendarList()` from `item.accessRole ?? "reader"` | Needed to gate write operations in UI without extra API calls |
+| allDay date handling in create | Pass full ISO string from `dateClick`, slice to `YYYY-MM-DD` on save if allDay | Keeps `toLocalInput()` working uniformly; `.slice(0, 10)` used instead of `.split("T")[0]` — array index access returns `string \| undefined` in strict TS |
 
 ---
 
@@ -506,6 +518,8 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 
 ### Immediate Next Steps
 
-1. **Add `eventResize` handler** to `CalendarPanel` — same structure as `eventDrop`. Check `recurringEventId`, call `askRecurring`, patch times or split series. Non-recurring: direct `patchEventTimes`. Uses same `calendarRef` mutation pattern for visual update.
-2. **Create event flow** — `dateClick` on empty slot → open EventModal in create mode → POST → refetch
-3. **Phase 5** — Accept/Reject: show response buttons when `selfResponseStatus === "needsAction"`, PATCH `responseStatus` with full attendees array
+1. **Delete event** — click event → EventModal → delete button → `deleteWithAuth()` → confirm dialog → refetch. Check `recurringEventId` and show RecurringModal first if recurring.
+2. **Phase 5** — Accept/Reject: show response buttons when `selfResponseStatus === "needsAction"`, PATCH `responseStatus` with full attendees array
+
+### Deferred Optimisations (do not start until core functionality complete)
+- **Targeted single-calendar refetch** — instead of full `fetchAllRef` after a write, only refetch events for the specific `calendarId` that changed. Cuts N requests down to 1-2. Reduces flash. Requires pulling `getEvents` into a standalone function that merges results back into `state.events` by `calendarId`.
