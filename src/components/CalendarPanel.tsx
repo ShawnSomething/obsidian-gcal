@@ -34,6 +34,11 @@ function getViewWindow(date: Date, view: "day" | "3day" | "week"): { timeMin: Da
 export default function CalendarPanel({ plugin }: Props) {
   const { state, dispatch } = useCalendar();
   const [editingEvent, setEditingEvent] = useState<CalEvent | null>(null);
+  const [creatingEvent, setCreatingEvent] = useState<{
+    start: string;
+    end: string;
+    allDay: boolean;
+  } | null>(null);
   const [recurringModalState, setRecurringModalState] = useState<{
     event: CalEvent;
     resolve: (choice: "this" | "following" | null) => void;
@@ -323,11 +328,20 @@ export default function CalendarPanel({ plugin }: Props) {
           eventClick={(info) => {
             setEditingEvent(info.event.extendedProps.calEvent as CalEvent);
           }}
+
+          dateClick={(info) => {
+            const start = info.date.toISOString();
+            const end = info.allDay
+              ? info.date.toISOString()
+              : new Date(info.date.getTime() + 60 * 60 * 1000).toISOString();
+            setCreatingEvent({ start, end, allDay: info.allDay });
+          }}
         />
       </div>
 
       {editingEvent && (
         <EventModal
+          mode="edit" 
           event={editingEvent}
           askRecurring={askRecurring}
           onClose={() => setEditingEvent(null)}
@@ -393,6 +407,30 @@ export default function CalendarPanel({ plugin }: Props) {
               });
             }
           }}
+        />
+      )}
+
+      {creatingEvent && (
+        <EventModal
+          mode="create"
+          initialStart={creatingEvent.start}
+          initialEnd={creatingEvent.end}
+          initialAllDay={creatingEvent.allDay}
+          onSave={async ({ title, start, end, allDay, calendarId, accountId }) => {
+            const account = plugin.data.accounts.find((a) => a.accountId === accountId);
+            if (!account) return;
+            try {
+              await plugin.api.postEvent(account, calendarId, { title, start, end, allDay });
+              setCreatingEvent(null);
+              await fetchAllRef.current?.();
+            } catch (err) {
+              dispatch({
+                type: "SET_ERROR",
+                payload: `Failed to create event: ${(err as Error).message}`,
+              });
+            }
+          }}
+          onClose={() => setCreatingEvent(null)}
         />
       )}
 

@@ -108,7 +108,43 @@ export class GoogleCalendarAPI {
 			summary: item.summary,
 			backgroundColor: item.backgroundColor ?? "#4285F4",
 			visible: true,
+			accessRole: item.accessRole ?? "reader",
 		}));
+
+		console.log(data.items.map((i: any) => ({ id: i.id, summary: i.summary, accessRole: i.accessRole })));
+	}
+
+	async postEvent(
+		account: AccountConfig,
+		calendarId: string,
+		event: { title: string; start: string; end: string; allDay: boolean },
+	): Promise<void> {
+		const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?sendUpdates=all`;
+
+		const startField = event.allDay
+			? { date: event.start }
+			: {
+					dateTime: event.start,
+					timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+				};
+
+		const endField = event.allDay
+			? { date: event.end }
+			: {
+					dateTime: event.end,
+					timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+				};
+
+		const response = await this.postWithAuth(account, url, {
+			summary: event.title,
+			start: startField,
+			end: endField,
+		});
+
+		if (!response.ok) {
+			const err = await response.json();
+			throw new Error(err.error?.message ?? "Failed to create event");
+		}
 	}
 
 	async getEvents(

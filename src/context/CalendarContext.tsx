@@ -13,6 +13,7 @@ export interface CalendarMeta {
   summary: string;
   backgroundColor: string;
   visible: boolean;
+  accessRole: string;
 }
 
 export interface Attendee {
