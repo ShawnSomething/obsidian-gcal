@@ -407,9 +407,10 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - [x] RecurringModal.tsx built — "This event" and "This and following" only (no "All events" — UX decision)
 - [x] RecurringModal wired into `eventDrop` and `EventModal` save via Promise-based `askRecurring` pattern
 - [x] `splitRecurringSeries()` added to `GoogleCalendarAPI.ts` — fetches master RRULE, sets UNTIL, POSTs new series, rollback on partial failure
+- [x] **BUG FIXED: splitRecurringSeries duplicate on split date** — Two bugs: (1) UNTIL was calculated from `updates.start` (the new edited time) instead of `instance.start` (the original occurrence time) — if the user changed the time, UNTIL landed too late and the original series still included the split instance. Fix: use `instance.start`. (2) Even with correct UNTIL, Google stores existing instance overrides independently of the RRULE — truncating the master doesn't delete them. Fix: added Step 1.5 — explicitly DELETE the original instance by ID after patching the master, before POSTing the new series. Added `deleteWithAuth()` to `GoogleCalendarAPI.ts` (same pattern as `getWithAuth`, method: "DELETE", no body). Rollback on delete failure restores original RRULE.
 - [x] `getEvent()` added to `GoogleCalendarAPI.ts`
 - [x] `UPDATE_EVENT` action added to CalendarContext reducer — optimistic update without refetch
-- [ ] **BUG: EventModal save duplicates event** — `putEvent` succeeds, optimistic UPDATE_EVENT dispatched, but duplicate still appears. Tried: refetch after save (Google returns stale data), `state.events.map` in closure (stale closure), `UPDATE_EVENT` reducer action (still failing). Root cause not yet confirmed — suspect FullCalendar controlled/uncontrolled event conflict. **Needs investigation in new thread.**
+- [x] **BUG FIXED: EventModal save duplicates event** — Root cause: `fcEvents` was computed inline on every render, producing a new array reference each time. FullCalendar v6 treats a new `events` prop reference as a new event source — it adds the new events without cleanly removing the previous source, causing duplicates. Fix: (1) wrap `fcEvents` in `useMemo` keyed on `[state.events, state.calendars]` to stabilise the reference, (2) use a `calendarRef` to mutate the FC event directly via `getApi().getEventById(id)` + `setProp/setStart/setEnd/setAllDay` after save — do not rely on the `events` prop to sync the visual update. Still dispatch `UPDATE_EVENT` to keep context in sync.
 - [ ] **BUG: Resize snaps back** — no `eventResize` handler exists. FullCalendar reverts resize without one. Handler written but not yet added — deferred. Same structure as `eventDrop`, needs `askRecurring` check for recurring events.
 - [ ] Create event — `dateClick` on empty slot → POST → refetch
 
@@ -450,8 +451,9 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | Plugin store review | `isDesktopOnly: true`, no remote code, no data collection |
 | Timezone in EventModal | datetime-local has no tz awareness — use toLocalInput() for display, new Date().toISOString() on save |
 | Google API stale reads after write | Immediate GET after PATCH/PUT can return old data — use optimistic context update instead of refetch |
-| FullCalendar controlled/uncontrolled conflict | Feeding `events` prop after FC has internally moved an event causes duplicates — optimistic UPDATE_EVENT is the correct pattern, but duplication bug on EventModal save is unresolved |
+| FullCalendar controlled/uncontrolled conflict | Feeding `events` prop after FC has internally moved an event causes duplicates — RESOLVED: memoize `fcEvents` with useMemo + use calendarRef.getApi() to mutate FC events directly on save instead of relying on prop re-render |
 | splitRecurringSeries partial failure | PATCH master succeeds, POST new series fails → rollback PATCH attempted. If rollback also fails, user is told to check Google Calendar directly |
+| splitRecurringSeries instance override ghost | Google stores instance overrides independently of RRULE — truncating master RRULE does not delete existing overrides. RESOLVED: explicitly DELETE the original instance (Step 1.5) before POSTing new series. UNTIL must be calculated from `instance.start`, not `updates.start`. |
 
 ---
 
@@ -485,6 +487,10 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | RecurringModal state pattern | Promise-based askRecurring in CalendarPanel | Single state location, clean callers — both eventDrop and EventModal await the same function |
 | Styles | All styles in styles.css using gcal- prefixed classes | No inline styles — shared classes (gcal-modal-backdrop, gcal-input, etc.) reused across components |
 | Post-write state sync | Optimistic UPDATE_EVENT dispatch, not refetch | Google API returns stale data on immediate GET after PATCH/PUT — refetch causes duplicates |
+| FullCalendar event updates | calendarRef mutation (getEventById + setProp/setStart/setEnd) + UPDATE_EVENT dispatch | events prop re-render causes duplicates — ref mutation is the only safe way to visually update a FC event without remounting the event source |
+| fcEvents memoization | useMemo keyed on [state.events, state.calendars] | Inline computation produces new array reference every render — FC treats each new reference as a new event source |
+| splitRecurringSeries UNTIL source | Use `instance.start`, not `updates.start` | UNTIL must reflect the original occurrence time the master series knows about, not the user's edited time |
+| splitRecurringSeries instance cleanup | DELETE original instance after patching master, before POSTing new series | Google stores instance overrides independently of RRULE — UNTIL truncation alone doesn't remove them |
 
 ---
 
@@ -500,6 +506,6 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 
 ### Immediate Next Steps
 
-1. **Fix EventModal save duplication bug** — `putEvent` succeeds and `UPDATE_EVENT` is dispatched but a duplicate event still appears in the calendar. Suspect FullCalendar is holding internal event state that conflicts with the controlled `events` prop after a save. Investigate whether calling `info.event.remove()` or using an uncontrolled FullCalendar ref approach resolves it.
-2. **Add `eventResize` handler** to `CalendarPanel` — same structure as `eventDrop`. Check `recurringEventId`, call `askRecurring`, patch times or split series. Non-recurring: direct `patchEventTimes`. Code already written, just needs adding to `<FullCalendar>`.
-3. **Create event flow** — `dateClick` on empty slot → open EventModal in create mode → POST → refetch
+1. **Add `eventResize` handler** to `CalendarPanel` — same structure as `eventDrop`. Check `recurringEventId`, call `askRecurring`, patch times or split series. Non-recurring: direct `patchEventTimes`. Uses same `calendarRef` mutation pattern for visual update.
+2. **Create event flow** — `dateClick` on empty slot → open EventModal in create mode → POST → refetch
+3. **Phase 5** — Accept/Reject: show response buttons when `selfResponseStatus === "needsAction"`, PATCH `responseStatus` with full attendees array

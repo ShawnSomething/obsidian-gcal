@@ -4,21 +4,17 @@
     "type": "split",
     "children": [
       {
-        "id": "21ded2799ebc6eb7",
+        "id": "fcd548591bafbf44",
         "type": "tabs",
         "children": [
           {
-            "id": "3c573448376ef50a",
+            "id": "3e8a90ee5cfd4e41",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "Welcome.md",
-                "mode": "source",
-                "source": false
-              },
+              "type": "empty",
+              "state": {},
               "icon": "lucide-file",
-              "title": "Welcome"
+              "title": "New tab"
             }
           }
         ]
@@ -180,7 +176,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 531.5
+    "width": 613.5
   },
   "left-ribbon": {
     "hiddenItems": {
@@ -194,9 +190,9 @@
       "sample-plugin:Google Calendar": false
     }
   },
-  "active": "2b5c068f323cf749",
+  "active": "3e8a90ee5cfd4e41",
   "lastOpenFiles": [
-    "Untitled.base",
-    "Welcome.md"
+    "Welcome.md",
+    "Untitled.base"
   ]
 }
