@@ -7,6 +7,7 @@ type EditProps = {
   askRecurring: (event: CalEvent) => Promise<"this" | "following" | null>;
   onSave: (updates: { title: string; start: string; end: string; allDay: boolean }) => void;
   onSplitSeries: (updates: { title: string; start: string; end: string; allDay: boolean }) => void;
+  onDelete: () => void;
   onClose: () => void;
 };
 
@@ -156,6 +157,11 @@ export default function EventModal(props: Props) {
         )}
 
         <div className="gcal-modal-footer">
+          {!isCreate && (
+            <button className="gcal-btn-danger" onClick={(props as EditProps).onDelete}>
+              Delete
+            </button>
+          )}
           <button className="gcal-modal-cancel" onClick={props.onClose}>Cancel</button>
           <button className="gcal-btn-primary" onClick={handleSave}>
             {isCreate ? "Create" : "Save"}

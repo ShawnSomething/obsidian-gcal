@@ -341,7 +341,7 @@ export default function CalendarPanel({ plugin }: Props) {
 
       {editingEvent && (
         <EventModal
-          mode="edit" 
+          mode="edit"
           event={editingEvent}
           askRecurring={askRecurring}
           onClose={() => setEditingEvent(null)}
@@ -404,6 +404,46 @@ export default function CalendarPanel({ plugin }: Props) {
               dispatch({
                 type: "SET_ERROR",
                 payload: `Failed to split series: ${(err as Error).message}`,
+              });
+            }
+          }}
+
+          onDelete={async () => {
+            if (!window.confirm(`Delete "${editingEvent.title}"?`)) return;
+            const account = plugin.data.accounts.find(
+              (a) => a.accountId === editingEvent.accountId
+            );
+            if (!account) return;
+            try {
+              if (editingEvent.recurringEventId) {
+                const choice = await askRecurring(editingEvent);
+                if (!choice) return;
+                if (choice === "this") {
+                  const res = await plugin.api.deleteWithAuth(
+                    account,
+                    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(editingEvent.calendarId)}/events/${editingEvent.id}`
+                  );
+                  if (!res.ok) throw new Error("Failed to delete event");
+                } else {
+                  await plugin.api.deleteRecurringAndFollowing(
+                    account,
+                    editingEvent.calendarId,
+                    editingEvent
+                  );
+                }
+              } else {
+                const res = await plugin.api.deleteWithAuth(
+                  account,
+                  `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(editingEvent.calendarId)}/events/${editingEvent.id}`
+                );
+                if (!res.ok) throw new Error("Failed to delete event");
+              }
+              setEditingEvent(null);
+              await fetchAllRef.current?.();
+            } catch (err) {
+              dispatch({
+                type: "SET_ERROR",
+                payload: `Failed to delete event: ${(err as Error).message}`,
               });
             }
           }}

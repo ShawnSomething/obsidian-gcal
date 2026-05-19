@@ -111,7 +111,13 @@ export class GoogleCalendarAPI {
 			accessRole: item.accessRole ?? "reader",
 		}));
 
-		console.log(data.items.map((i: any) => ({ id: i.id, summary: i.summary, accessRole: i.accessRole })));
+		console.log(
+			data.items.map((i: any) => ({
+				id: i.id,
+				summary: i.summary,
+				accessRole: i.accessRole,
+			})),
+		);
 	}
 
 	async postEvent(
@@ -362,6 +368,54 @@ export class GoogleCalendarAPI {
 			);
 			throw new Error(
 				"Failed to create new series. Original series has been restored. If the calendar looks wrong, check Google Calendar directly.",
+			);
+		}
+	}
+
+	async deleteRecurringAndFollowing(
+		account: AccountConfig,
+		calendarId: string,
+		instance: CalEvent,
+	): Promise<void> {
+		const masterUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${instance.recurringEventId}`;
+		const masterRes = await this.getWithAuth(account, masterUrl);
+		if (!masterRes.ok) throw new Error("Failed to fetch master event");
+		const master = await masterRes.json();
+
+		const originalRecurrence: string[] = master.recurrence ?? [];
+
+		// Calculate UNTIL = 1 second before instance start, in UTC RRULE format
+		const instanceDate = new Date(instance.start);
+		instanceDate.setSeconds(instanceDate.getSeconds() - 1);
+		const until = instanceDate
+			.toISOString()
+			.replace(/[-:]/g, "")
+			.replace(".000", "");
+
+		const updatedRecurrence = originalRecurrence.map((rule: string) => {
+			if (!rule.startsWith("RRULE:")) return rule;
+			if (rule.includes("UNTIL="))
+				return rule.replace(/UNTIL=[^;]+/, `UNTIL=${until}`);
+			if (rule.includes("COUNT="))
+				return rule.replace(/COUNT=[^;]+/, `UNTIL=${until}`);
+			return `${rule};UNTIL=${until}`;
+		});
+
+		const patchRes = await this.patchWithAuth(account, masterUrl, {
+			recurrence: updatedRecurrence,
+		});
+		if (!patchRes.ok) throw new Error("Failed to truncate master series");
+
+		const instanceUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${instance.id}`;
+		const deleteRes = await this.deleteWithAuth(account, instanceUrl);
+
+		if (!deleteRes.ok) {
+			// Rollback master RRULE
+			await this.patchWithAuth(account, masterUrl, {
+				recurrence: originalRecurrence,
+			});
+			throw new Error(
+				"Failed to delete instance — series truncation rolled back",
 			);
 		}
 	}
