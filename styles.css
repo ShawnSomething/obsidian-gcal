@@ -186,7 +186,7 @@
   border-color: var(--interactive-accent);
 }
 
-/* ─── Accept / Decline response ─────────────────────────────── */
+/* ─── Response buttons ───────────────────────────────────────── */
 
 .gcal-response-row {
   display: flex;
@@ -197,26 +197,39 @@
 
 .gcal-response-buttons {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 
-.gcal-btn-accept {
+.gcal-btn-response {
   padding: 4px 12px;
   border-radius: 4px;
-  border: none;
-  cursor: pointer;
-  background-color: var(--interactive-accent);
-  color: var(--text-on-accent);
-  font-size: 13px;
-}
-
-.gcal-btn-decline {
-  padding: 4px 12px;
-  border-radius: 4px;
-  border: none;
+  border: 1px solid var(--background-modifier-border);
   cursor: pointer;
   background: var(--background-secondary);
-  color: var(--text-normal);
-  border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
   font-size: 13px;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.gcal-btn-response:hover {
+  color: var(--text-normal);
+  border-color: var(--text-muted);
+}
+
+.gcal-btn-response--accepted.gcal-btn-response--active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+.gcal-btn-response--tentative.gcal-btn-response--active {
+  background: #f59e0b;
+  color: white;
+  border-color: #f59e0b;
+}
+
+.gcal-btn-response--declined.gcal-btn-response--active {
+  background: var(--text-error);
+  color: white;
+  border-color: var(--text-error);
 }

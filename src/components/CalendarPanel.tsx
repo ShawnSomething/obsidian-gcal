@@ -41,12 +41,18 @@ export default function CalendarPanel({ plugin }: Props) {
   } | null>(null);
   const [recurringModalState, setRecurringModalState] = useState<{
     event: CalEvent;
-    resolve: (choice: "this" | "following" | null) => void;
+    title?: string;
+    hideFollowing?: boolean;
+    showAll?: boolean;
+    resolve: (choice: "this" | "following" | "all" | null) => void;
   } | null>(null);
 
-  const askRecurring = (event: CalEvent): Promise<"this" | "following" | null> => {
+  const askRecurring = (
+    event: CalEvent,
+    opts?: { title?: string; hideFollowing?: boolean; showAll?: boolean }
+  ): Promise<"this" | "following" | "all" | null> => {
     return new Promise((resolve) => {
-      setRecurringModalState({ event, resolve });
+      setRecurringModalState({ event, resolve, ...opts });
     });
   };
 
@@ -352,10 +358,22 @@ export default function CalendarPanel({ plugin }: Props) {
             );
             if (!account) return;
             try {
+              let eventId = editingEvent.id;
+              if (editingEvent.recurringEventId) {
+                const choice = await askRecurring(editingEvent, {
+                  title: "RSVP to recurring event",
+                  hideFollowing: true,
+                  showAll: true,
+                });
+                if (!choice) return;
+                if (choice === "all") {
+                  eventId = editingEvent.recurringEventId;
+                }
+              }
               await plugin.api.patchAttendeeResponse(
                 account,
                 editingEvent.calendarId,
-                editingEvent.id,
+                eventId,
                 editingEvent.attendees,
                 status
               );
@@ -480,6 +498,9 @@ export default function CalendarPanel({ plugin }: Props) {
       {recurringModalState && (
         <RecurringModal
           eventTitle={recurringModalState.event.title}
+          title={recurringModalState.title}
+          hideFollowing={recurringModalState.hideFollowing}
+          showAll={recurringModalState.showAll}
           onChoice={(choice) => {
             recurringModalState.resolve(choice);
             setRecurringModalState(null);

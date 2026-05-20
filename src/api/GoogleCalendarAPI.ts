@@ -432,7 +432,7 @@ export class GoogleCalendarAPI {
 		calendarId: string,
 		eventId: string,
 		attendees: Attendee[],
-		responseStatus: "accepted" | "declined",
+		responseStatus: "accepted" | "declined" | "tentative",
 	): Promise<void> {
 		const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${eventId}?sendUpdates=all`;
 

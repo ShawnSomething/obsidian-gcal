@@ -5,11 +5,11 @@ import { RRuleFrequency, RRuleDay, buildRRule } from "../utils/rrule";
 type EditProps = {
   mode: "edit";
   event: CalEvent;
-  askRecurring: (event: CalEvent) => Promise<"this" | "following" | null>;
+  askRecurring: (event: CalEvent, opts?: { title?: string; hideFollowing?: boolean; showAll?: boolean }) => Promise<"this" | "following" | "all" | null>;
   onSave: (updates: { title: string; start: string; end: string; allDay: boolean }) => void;
   onSplitSeries: (updates: { title: string; start: string; end: string; allDay: boolean }) => void;
   onDelete: () => void;
-  onRespond?: (status: "accepted" | "declined") => void;
+  onRespond?: (status: "accepted" | "declined" | "tentative") => void;
   onClose: () => void;
 };
 
@@ -299,22 +299,19 @@ export default function EventModal(props: Props) {
           </>
         )}
 
-        {props.mode === "edit" && props.event.selfResponseStatus === "needsAction" && (
+        {props.mode === "edit" && (
           <div className="gcal-response-row">
-            <span className="gcal-field-label">Respond</span>
+            <span className="gcal-field-label">Going?</span>
             <div className="gcal-response-buttons">
-              <button
-                className="gcal-btn-accept"
-                onClick={() => (props as EditProps).onRespond?.("accepted")}
-              >
-                Accept
-              </button>
-              <button
-                className="gcal-btn-decline"
-                onClick={() => (props as EditProps).onRespond?.("declined")}
-              >
-                Decline
-              </button>
+              {(["accepted", "tentative", "declined"] as const).map((status) => (
+                <button
+                  key={status}
+                  className={`gcal-btn-response gcal-btn-response--${status}${props.event.selfResponseStatus === status ? " gcal-btn-response--active" : ""}`}
+                  onClick={() => (props as EditProps).onRespond?.(status)}
+                >
+                  {status === "accepted" ? "Yes" : status === "tentative" ? "Maybe" : "No"}
+                </button>
+              ))}
             </div>
           </div>
         )}
