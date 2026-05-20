@@ -185,3 +185,38 @@
   color: var(--text-on-accent);
   border-color: var(--interactive-accent);
 }
+
+/* ─── Accept / Decline response ─────────────────────────────── */
+
+.gcal-response-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.gcal-response-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.gcal-btn-accept {
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 13px;
+}
+
+.gcal-btn-decline {
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+  font-size: 13px;
+}

@@ -110,7 +110,9 @@ export default function CalendarPanel({ plugin }: Props) {
     () =>
       state.events
         .filter(
-          (e) => state.calendars.find((c) => c.id === e.calendarId)?.visible ?? false
+          (e) =>
+            (state.calendars.find((c) => c.id === e.calendarId)?.visible ?? false) &&
+            e.selfResponseStatus !== "declined"
         )
         .map((e) => ({
           id: e.id,
@@ -167,7 +169,6 @@ export default function CalendarPanel({ plugin }: Props) {
 
       <div style={{ flex: 1, overflow: "hidden" }}>
         <FullCalendar
-          ref={calendarRef}
           plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
           initialView={VIEW_MAP[state.activeView]}
           height="100%"
@@ -345,6 +346,28 @@ export default function CalendarPanel({ plugin }: Props) {
           event={editingEvent}
           askRecurring={askRecurring}
           onClose={() => setEditingEvent(null)}
+          onRespond={async (status) => {
+            const account = plugin.data.accounts.find(
+              (a) => a.accountId === editingEvent.accountId
+            );
+            if (!account) return;
+            try {
+              await plugin.api.patchAttendeeResponse(
+                account,
+                editingEvent.calendarId,
+                editingEvent.id,
+                editingEvent.attendees,
+                status
+              );
+              setEditingEvent(null);
+              await fetchAllRef.current?.();
+            } catch (err) {
+              dispatch({
+                type: "SET_ERROR",
+                payload: `Failed to update response: ${(err as Error).message}`,
+              });
+            }
+          }}
           onSave={async (updates) => {
             const account = plugin.data.accounts.find(
               (a) => a.accountId === editingEvent.accountId
@@ -357,28 +380,8 @@ export default function CalendarPanel({ plugin }: Props) {
                 editingEvent.id,
                 updates
               );
-              const calApi = calendarRef.current?.getApi();
-              const fcEvent = calApi?.getEventById(editingEvent.id);
-
-              if (fcEvent) {
-                fcEvent.setProp('title', updates.title);
-                fcEvent.setStart(updates.start);
-                fcEvent.setEnd(updates.end ?? '');
-                if (updates.allDay !== undefined) fcEvent.setAllDay(updates.allDay);
-              }
-              dispatch({
-                type: "UPDATE_EVENT",
-                payload: {
-                  id: editingEvent.id,
-                  changes: {
-                    title: updates.title,
-                    start: updates.start,
-                    end: updates.end,
-                    allDay: updates.allDay,
-                  },
-                },
-              });
               setEditingEvent(null);
+              await fetchAllRef.current?.();
             } catch (err) {
               dispatch({
                 type: "SET_ERROR",

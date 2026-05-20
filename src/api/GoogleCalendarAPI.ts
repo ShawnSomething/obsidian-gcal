@@ -1,6 +1,6 @@
 import { AccountConfig } from "./types";
 import { TokenStore } from "../auth/TokenStore";
-import { CalendarMeta, CalEvent } from "../context/CalendarContext";
+import { CalendarMeta, CalEvent, Attendee } from "../context/CalendarContext";
 
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 
@@ -123,7 +123,13 @@ export class GoogleCalendarAPI {
 	async postEvent(
 		account: AccountConfig,
 		calendarId: string,
-		event: { title: string; start: string; end: string; allDay: boolean; recurrence?: string[] },
+		event: {
+			title: string;
+			start: string;
+			end: string;
+			allDay: boolean;
+			recurrence?: string[];
+		},
 	): Promise<void> {
 		const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?sendUpdates=all`;
 
@@ -417,6 +423,31 @@ export class GoogleCalendarAPI {
 			});
 			throw new Error(
 				"Failed to delete instance — series truncation rolled back",
+			);
+		}
+	}
+
+	async patchAttendeeResponse(
+		account: AccountConfig,
+		calendarId: string,
+		eventId: string,
+		attendees: Attendee[],
+		responseStatus: "accepted" | "declined",
+	): Promise<void> {
+		const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${eventId}?sendUpdates=all`;
+
+		const updatedAttendees = attendees.map((a) =>
+			a.self ? { ...a, responseStatus } : a,
+		);
+
+		const response = await this.patchWithAuth(account, url, {
+			attendees: updatedAttendees,
+		});
+
+		if (!response.ok) {
+			const err = await response.json();
+			throw new Error(
+				err.error?.message ?? "Failed to update response status",
 			);
 		}
 	}

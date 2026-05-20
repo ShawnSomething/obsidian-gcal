@@ -9,6 +9,7 @@ type EditProps = {
   onSave: (updates: { title: string; start: string; end: string; allDay: boolean }) => void;
   onSplitSeries: (updates: { title: string; start: string; end: string; allDay: boolean }) => void;
   onDelete: () => void;
+  onRespond?: (status: "accepted" | "declined") => void;
   onClose: () => void;
 };
 
@@ -296,6 +297,26 @@ export default function EventModal(props: Props) {
               </div>
             )}
           </>
+        )}
+
+        {props.mode === "edit" && props.event.selfResponseStatus === "needsAction" && (
+          <div className="gcal-response-row">
+            <span className="gcal-field-label">Respond</span>
+            <div className="gcal-response-buttons">
+              <button
+                className="gcal-btn-accept"
+                onClick={() => (props as EditProps).onRespond?.("accepted")}
+              >
+                Accept
+              </button>
+              <button
+                className="gcal-btn-decline"
+                onClick={() => (props as EditProps).onRespond?.("declined")}
+              >
+                Decline
+              </button>
+            </div>
+          </div>
         )}
 
         <div className="gcal-modal-footer">
