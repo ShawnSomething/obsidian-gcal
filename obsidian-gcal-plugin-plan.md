@@ -102,7 +102,7 @@ obsidian-gcal/
 │   │   ├── OAuthManager.ts       ← OAuth PKCE flow per account ✓ DONE
 │   │   └── TokenStore.ts         ← Read/write tokens via plugin.saveData() ✓ DONE
 │   ├── api/
-│   │   ├── GoogleCalendarAPI.ts  ← All API calls with auto-refresh ✓ DONE (getEvent + splitRecurringSeries + postEvent + deleteWithAuth + deleteRecurringAndFollowing added)
+│   │   ├── GoogleCalendarAPI.ts  ← All API calls with auto-refresh ✓ DONE (patchAttendeeResponse added)
 │   │   └── types.ts              ← TypeScript types for all Google API shapes ✓ DONE
 │   └── utils/
 │       ├── dedup.ts              ← Event deduplication by iCalUID ✓ DONE
@@ -182,6 +182,12 @@ interface CalendarMeta {
   backgroundColor: string;
   visible: boolean;
   accessRole: string;   // "owner" | "writer" | "reader" — gates write operations
+}
+
+interface Attendee {
+  email: string;
+  responseStatus: "accepted" | "declined" | "tentative" | "needsAction";
+  self?: boolean;
 }
 
 interface CalEvent {
@@ -273,12 +279,14 @@ useEffect(() => {
 backgroundColor: (calendars.find(c => c.id === e.calendarId)?.backgroundColor ?? "#4285F4") + "CC"
 ```
 
+**Declined event filter** — `fcEvents` useMemo filters out events where `selfResponseStatus === "declined"`. Done client-side, no refetch needed.
+
 ### 5.7 Write Operations
 
 **Drag-to-move:** `PATCH` with `sendUpdates=none`. Call `revert()` on error.
 **Edit event:** `PUT` full event body, `sendUpdates=all`.
 **Create event:** `POST`, `sendUpdates=all`. Accepts optional `recurrence?: string[]`.
-**Accept/Decline:** `PATCH` attendees array (must send full array).
+**Accept/Decline:** `PATCH` attendees array (must send full array), `sendUpdates=all`. `organizer` and `creator` fields are immutable — patching attendees never changes event ownership.
 **Delete event (non-recurring):** `DELETE` the event URL directly via `deleteWithAuth()`.
 **Delete recurring — this event:** `DELETE` the instance ID.
 **Delete recurring — this and following:** `deleteRecurringAndFollowing()` — PATCH master UNTIL to 1 second before `instance.start`, then DELETE the instance. Rollback RRULE if DELETE fails. No POST (unlike splitRecurringSeries).
@@ -303,6 +311,12 @@ function toLocalInput(isoString: string): string {
 - **All events** — PATCH/PUT the master event via `recurringEventId`
 
 Recurring instance IDs have a `_YYYYMMDDTHHMMSSZ` suffix (e.g. `bd8d1298a0d94760_20260522T214500Z`). Check for `calEvent.recurringEventId` to detect recurring instances before writing.
+
+**Attendee response on recurring events:**
+- "This event" → PATCH the instance ID
+- "All events" → PATCH the master ID (`recurringEventId`)
+- "This and following" does NOT exist in the Google Calendar API for attendee responses — verify at https://developers.google.com/calendar/api/v3/reference/events/patch before building UI for it.
+- RecurringModal options for response differ from time edits — need separate modal config or conditional prop to hide "This and following" option.
 
 ### 5.9 FullCalendar Config Notes
 
@@ -368,6 +382,21 @@ const [countNum, setCountNum] = useState(1);
 
 Import: `import { RRuleFrequency, RRuleDay, buildRRule } from "../utils/rrule"` — static import, not dynamic.
 
+### 5.11 Accept / Decline Pattern
+
+`patchAttendeeResponse()` in `GoogleCalendarAPI.ts`:
+- Takes `attendees: Attendee[]`, finds `self: true` entry, updates its `responseStatus`
+- Sends full attendees array back — required, Google drops unlisted attendees otherwise
+- `sendUpdates=all` — organiser needs to know you responded
+- `organizer` and `creator` fields are immutable — this PATCH cannot change event ownership, no new event is created. The Akiflow "creates a new event where you're the owner" bug was caused by a POST, not a PATCH.
+
+Accept/decline buttons in `EventModal` edit mode:
+- Only shown when `selfResponseStatus === "needsAction"`
+- `onRespond?: (status: "accepted" | "declined") => void` prop on `EditProps`
+- Wired in `CalendarPanel` — calls `patchAttendeeResponse`, closes modal, refetches
+
+Declined events filtered out of `fcEvents` useMemo in `CalendarPanel` — `selfResponseStatus !== "declined"`. Events with `accepted`, `tentative`, or `needsAction` are shown.
+
 ---
 
 ## 6. Obsidian-Specific Patterns
@@ -382,10 +411,10 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | `--background-secondary` | Time slot background, hover state |
 | `--text-normal` | Event text, time labels |
 | `--text-muted` | Faint labels, borders, disabled states |
-| `--interactive-accent` | Today highlight |
+| `--interactive-accent` | Today highlight, accept button |
 | `--background-modifier-border` | Grid lines, dropdown border |
 | `--text-error` | Error messages |
-| `--text-on-accent` | Text on accent-coloured buttons (e.g. active day-of-week pill) |
+| `--text-on-accent` | Text on accent-coloured buttons |
 
 ### manifest.json
 ```json
@@ -454,35 +483,33 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - [x] Manual refresh button in CalendarPanel header
 - [x] firstDay=1 (Monday) set on FullCalendar
 
-### Phase 4 — Write Operations 🔄 IN PROGRESS
-- [x] Drag-to-move → `patchEventTimes()` PATCH `sendUpdates=none`, revert on error — DONE
-- [x] Edit modal (`EventModal.tsx`) → `putEvent()` PUT `sendUpdates=all` — DONE
+### Phase 4 — Write Operations ✅ DONE
+- [x] Drag-to-move → `patchEventTimes()` PATCH `sendUpdates=none`, revert on error
+- [x] Edit modal (`EventModal.tsx`) → `putEvent()` PUT `sendUpdates=all`
 - [x] Timezone fix in EventModal — `toLocalInput()` for display, `new Date(str).toISOString()` on save
 - [x] Locale fix — `locale={enAU}` for DD/MM date format
 - [x] All inline styles moved to `styles.css` — EventModal and RecurringModal use shared gcal- classes
-- [x] RecurringModal.tsx built — "This event" and "This and following" only (no "All events" — UX decision)
+- [x] RecurringModal.tsx built — "This event" and "This and following" only
 - [x] RecurringModal wired into `eventDrop` and `EventModal` save via Promise-based `askRecurring` pattern
-- [x] `splitRecurringSeries()` added to `GoogleCalendarAPI.ts` — fetches master RRULE, sets UNTIL, POSTs new series, rollback on partial failure
-- [x] **BUG FIXED: splitRecurringSeries duplicate on split date** — Two bugs: (1) UNTIL was calculated from `updates.start` instead of `instance.start`. (2) Google stores existing instance overrides independently of RRULE — truncating the master doesn't delete them. Fix: added Step 1.5 — explicitly DELETE the original instance by ID after patching the master, before POSTing the new series. Added `deleteWithAuth()` to `GoogleCalendarAPI.ts`. Rollback on delete failure restores original RRULE.
+- [x] `splitRecurringSeries()` added to `GoogleCalendarAPI.ts`
+- [x] BUG FIXED: splitRecurringSeries duplicate on split date
 - [x] `getEvent()` added to `GoogleCalendarAPI.ts`
-- [x] `UPDATE_EVENT` action added to CalendarContext reducer — optimistic update without refetch
-- [x] **BUG FIXED: EventModal save duplicates event** — Root cause: `fcEvents` computed inline on every render produces new array reference. FullCalendar v6 treats new `events` prop reference as a new event source. Fix: wrap `fcEvents` in `useMemo` keyed on `[state.events, state.calendars]`. Use `calendarRef` to mutate FC event directly via `getApi().getEventById(id)` + `setProp/setStart/setEnd/setAllDay` after save.
-- [x] **BUG FIXED: Resize snaps back** — added `eventResize` handler to `CalendarPanel`. Identical structure to `eventDrop`.
-- [x] **PENDING: EventModal save still uses optimistic update** — drop `calendarRef` mutation + `UPDATE_EVENT` dispatch in edit mode, replace with `fetchAllRef.current?.()`. Deferred until core functionality is complete.
-- [x] Create event — `dateClick` on empty slot → EventModal (create mode) → `postEvent()` POST `sendUpdates=all` → refetch. EventModal uses discriminated union Props (`mode: "edit" | "create"`). Create mode shows calendar picker filtered to `accessRole === "owner" || "writer"`. `postEvent()` added to `GoogleCalendarAPI.ts`. `accessRole` added to `CalendarMeta`.
-- [x] Delete event — `onDelete` prop on EditProps → `window.confirm` → if recurring, `askRecurring` → "this" DELETEs instance, "following" calls `deleteRecurringAndFollowing()` → refetch.
-- [x] `deleteRecurringAndFollowing()` added to `GoogleCalendarAPI.ts` — fetch master RRULE, PATCH UNTIL to 1s before `instance.start`, DELETE instance, rollback RRULE on DELETE failure.
-- [x] **Create recurring event — all steps DONE**
-  - [x] **Step 1** — Extended `CreateProps.onSave` to accept `recurrence?: string[]`
-  - [x] **Step 2** — Built `utils/rrule.ts` — pure `buildRRule(options) → string`. Handles frequency, interval, BYDAY (weekly day picker), end condition (never / until / count)
-  - [x] **Step 3** — Added recurrence UI to `EventModal` create mode — repeat toggle, frequency dropdown, interval input, day-of-week picker (weekly only), end condition picker. Default day pre-populated from event start date.
-  - [x] **Step 4** — Wired `buildRRule` into `EventModal.handleSave` via static import
-  - [x] **Step 5** — Updated `postEvent` to accept and send `recurrence?: string[]`
-  - [x] **Step 6** — Threaded `recurrence` through `CalendarPanel` dateClick → onSave → postEvent chain
+- [x] `UPDATE_EVENT` action added to CalendarContext reducer
+- [x] BUG FIXED: EventModal save duplicates event — fcEvents wrapped in useMemo
+- [x] BUG FIXED: Resize snaps back — added `eventResize` handler
+- [x] Create event — `dateClick` → EventModal (create mode) → `postEvent()` → refetch
+- [x] Delete event — `onDelete` prop → `window.confirm` → if recurring, `askRecurring` → refetch
+- [x] `deleteRecurringAndFollowing()` added to `GoogleCalendarAPI.ts`
+- [x] Create recurring event — full RRULE UI in EventModal create mode, wired end-to-end
 
-### Phase 5 — Accept / Reject
-- [ ] Show response buttons when `selfResponseStatus === "needsAction"`
-- [ ] PATCH `responseStatus` with full attendees array
+### Phase 5 — Accept / Reject 🔄 IN PROGRESS
+- [x] `patchAttendeeResponse()` added to `GoogleCalendarAPI.ts` — patches full attendees array, `sendUpdates=all`
+- [x] `onRespond` prop added to `EditProps` in `EventModal.tsx`
+- [x] Accept/Decline buttons shown in modal when `selfResponseStatus === "needsAction"`
+- [x] Wired in `CalendarPanel` — calls `patchAttendeeResponse`, closes modal, refetches
+- [x] Declined events filtered from `fcEvents` — `selfResponseStatus !== "declined"`
+- [ ] Recurring event response — need to surface RecurringModal with "This event" / "All events" options (NO "this and following" — verify API support first at https://developers.google.com/calendar/api/v3/reference/events/patch)
+- [ ] RecurringModal needs a prop to conditionally hide "This and following" for response-only context
 
 ### Phase 6 — UI Polish
 - [ ] Mini month navigation widget
@@ -516,13 +543,15 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | FullCalendar 0-height render | Flex column layout — header flexShrink:0, FC wrapper flex:1 |
 | Plugin store review | `isDesktopOnly: true`, no remote code, no data collection |
 | Timezone in EventModal | datetime-local has no tz awareness — use toLocalInput() for display, new Date().toISOString() on save |
-| Google API stale reads after write | Immediate GET after PATCH/PUT can return old data — mitigated by short delay or relying on 5-min poll. Decision: always refetch after writes for state accuracy; flash is acceptable trade-off over stale UI. |
-| FullCalendar controlled/uncontrolled conflict | Feeding `events` prop after FC has internally moved an event causes duplicates — RESOLVED: memoize `fcEvents` with useMemo + use calendarRef.getApi() to mutate FC events directly on save instead of relying on prop re-render |
-| Read-only calendars in create dropdown | Filter dropdown by `accessRole === "owner" \|\| "writer"` — `minAccessRole=reader` includes calendars the user cannot write to (e.g. AU holidays calendar) |
-| splitRecurringSeries instance override ghost | Google stores instance overrides independently of RRULE — truncating master RRULE does not delete existing overrides. RESOLVED: explicitly DELETE the original instance (Step 1.5) before POSTing new series. UNTIL must be calculated from `instance.start`, not `updates.start`. |
-| deleteRecurringAndFollowing UNTIL source | Same rule as splitRecurringSeries — use `instance.start`, not any edited time. UNTIL format: ISO string with dashes/colons stripped via `.replace(/[-:]/g, "").replace(".000", "")`. |
-| RRULE BYDAY empty on weekly | Default to event start date's weekday — `DAY_MAP[new Date(startStr).getDay()] ?? "MO"`. Prevents UI showing no days selected (looks broken) and avoids Google inference round-trip. |
-| Array index in strict TS | `DAY_MAP[n]` returns `string \| undefined` in strict mode — always add `?? "MO"` fallback. Same applies to `.split("T")[0]` — use `.slice(0, 10)` instead. |
+| Google API stale reads after write | Always refetch after writes; flash is acceptable trade-off over stale UI |
+| FullCalendar controlled/uncontrolled conflict | Memoize `fcEvents` with useMemo + use calendarRef.getApi() to mutate FC events directly |
+| Read-only calendars in create dropdown | Filter by `accessRole === "owner" \|\| "writer"` |
+| splitRecurringSeries instance override ghost | Explicitly DELETE original instance (Step 1.5) before POSTing new series |
+| deleteRecurringAndFollowing UNTIL source | Use `instance.start`, not any edited time |
+| RRULE BYDAY empty on weekly | Default to event start date's weekday — `DAY_MAP[new Date(startStr).getDay()] ?? "MO"` |
+| Array index in strict TS | `DAY_MAP[n]` returns `string \| undefined` — always add `?? "MO"` fallback. Use `.slice(0, 10)` not `.split("T")[0]` |
+| Attendee PATCH ownership concern | `organizer` and `creator` are immutable — sending full attendees array via PATCH never changes event ownership or creates new events. Akiflow's bug was a POST, not a PATCH. |
+| Recurring attendee response scope | Google API may not support "this and following" for response status — verify before building. Options are instance ID (this event) or master ID (all events) only. |
 
 ---
 
@@ -538,6 +567,7 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | Default new event calendar | First account's primary | Overridable in create modal |
 | `sendUpdates` on drag | `none` | Dragging should not spam attendees |
 | `sendUpdates` on explicit edit | `all` | User is intentionally changing the event |
+| `sendUpdates` on accept/decline | `all` | Organiser needs to know you responded |
 | `baseUrl` in tsconfig | Removed | esbuild handles resolution, not needed |
 | `moduleResolution` in tsconfig | Changed to `bundler` | Correct setting when esbuild is bundling |
 | TokenStore location | `auth/` folder | Manages auth credentials, not API calls |
@@ -560,9 +590,9 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | fcEvents memoization | useMemo keyed on [state.events, state.calendars] | Inline computation produces new array reference every render — FC treats each new reference as a new event source |
 | splitRecurringSeries UNTIL source | Use `instance.start`, not `updates.start` | UNTIL must reflect the original occurrence time the master series knows about, not the user's edited time |
 | EventModal modes | Discriminated union `type Props = EditProps | CreateProps` | Clean separation — create mode drops askRecurring/onSplitSeries entirely. TypeScript only narrows discriminated unions via direct `props.mode === "x"` checks — derived booleans (`isCreate`) and `as` casts do NOT narrow |
-| Calendar write filter | Filter by `accessRole === "owner" \|\| "writer"` in create modal dropdown | `minAccessRole=reader` returns all visible calendars including read-only — must filter for write operations. Default calendar selection must also use this filter, not just visibility |
+| Calendar write filter | Filter by `accessRole === "owner" \|\| "writer"` in create modal dropdown | `minAccessRole=reader` returns all visible calendars including read-only — must filter for write operations |
 | accessRole storage | Added to `CalendarMeta`, mapped in `getCalendarList()` from `item.accessRole ?? "reader"` | Needed to gate write operations in UI without extra API calls |
-| allDay date handling in create | Pass full ISO string from `dateClick`, slice to `YYYY-MM-DD` on save if allDay | Keeps `toLocalInput()` working uniformly; `.slice(0, 10)` used instead of `.split("T")[0]` — array index access returns `string \| undefined` in strict TS |
+| allDay date handling in create | Pass full ISO string from `dateClick`, slice to `YYYY-MM-DD` on save if allDay | Keeps `toLocalInput()` working uniformly; `.slice(0, 10)` used instead of `.split("T")[0]` |
 | Delete confirmation | `window.confirm` | Simplest option; works in Obsidian/Electron; no extra modal state needed |
 | Delete button position | `gcal-btn-danger` with `margin-right: auto` in flex footer | Pushes delete to the left while cancel/save stay right — standard destructive action pattern |
 | deleteRecurringAndFollowing vs splitRecurringSeries | No POST step | Delete "this and following" is the first half of splitRecurringSeries only — truncate master + delete instance, no new series |
@@ -570,6 +600,10 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | RRULE import style | Static import at top of EventModal | Dynamic import adds async complexity for no benefit — rrule.ts is ~30 lines with no dependencies |
 | RRULE default day (weekly) | Pre-populate from event start date | Google infers start day anyway; pre-populating avoids empty day picker looking broken |
 | "Every weekday except Wednesday" UX | Weekly frequency + uncheck Wednesday in day picker | RRULE has no "except" modifier — BYDAY=MO,TU,TH,FR is the correct encoding |
+| Accept/decline button placement | Inside EventModal, not on event chip | Event chips have limited real estate; buttons on chip cause accidental clicks |
+| Declined event visibility | Filter out from fcEvents | User doesn't want to see events they've rejected; accepted/tentative/needsAction remain visible |
+| Attendee response — full array required | Send all attendees, update only self entry | Google drops unlisted attendees if you send a partial array |
+| Recurring response scope | Verify "this and following" API support before building | May not exist for attendee responses — instance vs master may be the only options |
 
 ---
 
@@ -581,11 +615,14 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - Phase 1: DONE
 - Phase 2: DONE
 - Phase 3: DONE
-- Phase 4: IN PROGRESS — create recurring DONE; EventModal save refetch pending
+- Phase 4: DONE
+- Phase 5: IN PROGRESS
 
 ### Immediate Next Steps
 
-1. **Phase 5** — Accept/Reject: show response buttons when `selfResponseStatus === "needsAction"`, PATCH `responseStatus` with full attendees array.
+1. **Verify** whether Google Calendar API supports "this and following" for attendee response PATCH. Check: https://developers.google.com/calendar/api/v3/reference/events/patch
+2. **Complete Phase 5** — wire recurring check into `onRespond` in `CalendarPanel`. If "this and following" is not supported: show RecurringModal with only "This event" (patch instance) and "All events" (patch master via `recurringEventId`) options. Requires a prop on `RecurringModal` to hide the "This and following" option.
+3. **Commit** and move to Phase 6.
 
 ### Deferred Optimisations (do not start until core functionality complete)
 - **Targeted single-calendar refetch** — instead of full `fetchAllRef` after a write, only refetch events for the specific `calendarId` that changed. Cuts N requests down to 1-2. Reduces flash. Requires pulling `getEvents` into a standalone function that merges results back into `state.events` by `calendarId`.
