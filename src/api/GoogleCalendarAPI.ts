@@ -123,7 +123,7 @@ export class GoogleCalendarAPI {
 	async postEvent(
 		account: AccountConfig,
 		calendarId: string,
-		event: { title: string; start: string; end: string; allDay: boolean },
+		event: { title: string; start: string; end: string; allDay: boolean; recurrence?: string[] },
 	): Promise<void> {
 		const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?sendUpdates=all`;
 
@@ -145,6 +145,7 @@ export class GoogleCalendarAPI {
 			summary: event.title,
 			start: startField,
 			end: endField,
+			...(event.recurrence ? { recurrence: event.recurrence } : {}),
 		});
 
 		if (!response.ok) {

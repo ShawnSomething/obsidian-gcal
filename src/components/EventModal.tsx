@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { CalEvent, useCalendar } from "../context/CalendarContext";
+import { RRuleFrequency, RRuleDay, buildRRule } from "../utils/rrule";
 
 type EditProps = {
   mode: "edit";
@@ -23,6 +24,7 @@ type CreateProps = {
     allDay: boolean;
     calendarId: string;
     accountId: string;
+    recurrence?: string[];
   }) => void;
   onClose: () => void;
 };
@@ -34,6 +36,9 @@ function toLocalInput(isoString: string): string {
   const offset = date.getTimezoneOffset() * 60000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
+
+const DAY_MAP: RRuleDay[] = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+const getStartDay = (startStr: string): RRuleDay => DAY_MAP[new Date(startStr).getDay()] ?? "MO";
 
 export default function EventModal(props: Props) {
   const { state } = useCalendar();
@@ -52,6 +57,25 @@ export default function EventModal(props: Props) {
     toLocalInput(isCreate ? (props as CreateProps).initialEnd : (props as EditProps).event.end)
   );
 
+  const [repeat, setRepeat] = useState(false);
+  const [frequency, setFrequency] = useState<RRuleFrequency>("WEEKLY");
+  const [interval, setInterval] = useState(1);
+  const [days, setDays] = useState<RRuleDay[]>([getStartDay(start)]);
+  const [endType, setEndType] = useState<"never" | "until" | "count">("never");
+  const [untilDate, setUntilDate] = useState("");
+  const [countNum, setCountNum] = useState(1);
+
+  const ALL_DAYS: RRuleDay[] = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+  const DAY_LABELS: Record<RRuleDay, string> = {
+    MO: "Mo", TU: "Tu", WE: "We", TH: "Th", FR: "Fr", SA: "Sa", SU: "Su"
+  };
+
+  const toggleDay = (day: RRuleDay) => {
+    setDays(prev =>
+      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
+    );
+  };
+
   const defaultCal = state.calendars.find((c) => c.visible && (c.accessRole === "owner" || c.accessRole === "writer")) ?? state.calendars[0];
   const [selectedCalendarId, setSelectedCalendarId] = useState(defaultCal?.id ?? "");
 
@@ -63,6 +87,23 @@ export default function EventModal(props: Props) {
 
     if (isCreate) {
       const cal = state.calendars.find((c) => c.id === selectedCalendarId);
+
+      let recurrence: string[] | undefined;
+      if (repeat) {
+        const rrule = buildRRule({
+          frequency,
+          interval,
+          days: frequency === "WEEKLY" ? days : undefined,
+          end:
+            endType === "until"
+              ? { type: "until", date: untilDate }
+              : endType === "count"
+                ? { type: "count", count: countNum }
+                : { type: "never" },
+        });
+        recurrence = [rrule];
+      }
+
       (props as CreateProps).onSave({
         title,
         start: finalStart,
@@ -70,6 +111,7 @@ export default function EventModal(props: Props) {
         allDay,
         calendarId: selectedCalendarId,
         accountId: cal?.accountId ?? "",
+        recurrence,
       });
       return;
     }
@@ -153,6 +195,106 @@ export default function EventModal(props: Props) {
                 className="gcal-input"
               />
             </label>
+          </>
+        )}
+
+        {props.mode === "create" && (
+          <>
+            <label className="gcal-checkbox-label">
+              <input
+                type="checkbox"
+                checked={repeat}
+                onChange={(e) => setRepeat(e.target.checked)}
+              />
+              Repeat
+            </label>
+
+            {repeat && (
+              <div className="gcal-recurrence-block">
+                <label className="gcal-field-label">
+                  Frequency
+                  <select
+                    value={frequency}
+                    onChange={(e) => {
+                      const freq = e.target.value as RRuleFrequency;
+                      setFrequency(freq);
+                      if (freq === "WEEKLY" && days.length === 0) {
+                        setDays([getStartDay(start)]);
+                      }
+                    }}
+                    className="gcal-input"
+                  >
+                    <option value="DAILY">Daily</option>
+                    <option value="WEEKLY">Weekly</option>
+                    <option value="MONTHLY">Monthly</option>
+                    <option value="YEARLY">Yearly</option>
+                  </select>
+                </label>
+
+                <label className="gcal-field-label">
+                  Every
+                  <input
+                    type="number"
+                    min={1}
+                    value={interval}
+                    onChange={(e) => setInterval(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="gcal-input"
+                  />
+                </label>
+
+                {frequency === "WEEKLY" && (
+                  <div className="gcal-day-picker">
+                    {ALL_DAYS.map(day => (
+                      <button
+                        key={day}
+                        className={`gcal-day-btn${days.includes(day) ? " gcal-day-btn--active" : ""}`}
+                        onClick={() => toggleDay(day)}
+                      >
+                        {DAY_LABELS[day]}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <label className="gcal-field-label">
+                  Ends
+                  <select
+                    value={endType}
+                    onChange={(e) => setEndType(e.target.value as "never" | "until" | "count")}
+                    className="gcal-input"
+                  >
+                    <option value="never">Never</option>
+                    <option value="until">On date</option>
+                    <option value="count">After N occurrences</option>
+                  </select>
+                </label>
+
+                {endType === "until" && (
+                  <label className="gcal-field-label">
+                    End date
+                    <input
+                      type="date"
+                      value={untilDate}
+                      onChange={(e) => setUntilDate(e.target.value)}
+                      className="gcal-input"
+                    />
+                  </label>
+                )}
+
+                {endType === "count" && (
+                  <label className="gcal-field-label">
+                    Occurrences
+                    <input
+                      type="number"
+                      min={1}
+                      value={countNum}
+                      onChange={(e) => setCountNum(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="gcal-input"
+                    />
+                  </label>
+                )}
+              </div>
+            )}
           </>
         )}
 
