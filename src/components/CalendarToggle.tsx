@@ -88,8 +88,32 @@ export default function CalendarToggle() {
                                 padding: "2px 12px 6px",
                                 fontSize: "11px",
                                 color: "var(--text-muted)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
                             }}>
-                                {accountId}
+                                <span>{accountId}</span>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        window.open(
+                                            `https://accounts.google.com/AccountChooser?Email=${encodeURIComponent(accountId)}&continue=https%3A%2F%2Fcalendar.google.com`,
+                                            "_blank"
+                                        );
+                                    }}
+                                    style={{
+                                        background: "none",
+                                        border: "none",
+                                        cursor: "pointer",
+                                        padding: "0 2px",
+                                        color: "var(--text-muted)",
+                                        fontSize: "12px",
+                                        lineHeight: 1,
+                                    }}
+                                    title={`Open Google Calendar for ${accountId}`}
+                                >
+                                    ↗
+                                </button>
                             </div>
                             {calendars.map((cal) => (
                                 <div
