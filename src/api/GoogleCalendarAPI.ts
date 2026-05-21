@@ -129,6 +129,8 @@ export class GoogleCalendarAPI {
 			end: string;
 			allDay: boolean;
 			recurrence?: string[];
+			location?: string;
+			description?: string;
 		},
 	): Promise<void> {
 		const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?sendUpdates=all`;
@@ -152,6 +154,8 @@ export class GoogleCalendarAPI {
 			start: startField,
 			end: endField,
 			...(event.recurrence ? { recurrence: event.recurrence } : {}),
+			...(event.location ? { location: event.location } : {}),
+			...(event.description ? { description: event.description } : {}),
 		});
 
 		if (!response.ok) {
@@ -208,6 +212,9 @@ export class GoogleCalendarAPI {
 					"accepted",
 				recurrence: item.recurrence,
 				recurringEventId: item.recurringEventId,
+				location: item.location,
+				description: item.description,
+				hangoutLink: item.hangoutLink,
 			}));
 	}
 
@@ -235,7 +242,14 @@ export class GoogleCalendarAPI {
 		account: AccountConfig,
 		calendarId: string,
 		eventId: string,
-		updates: { title: string; start: string; end: string; allDay: boolean },
+		updates: {
+			title: string;
+			start: string;
+			end: string;
+			allDay: boolean;
+			location?: string;
+			description?: string;
+		},
 	): Promise<void> {
 		const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${eventId}?sendUpdates=all`;
 
@@ -251,6 +265,12 @@ export class GoogleCalendarAPI {
 			summary: updates.title,
 			start: startField,
 			end: endField,
+			...(updates.location !== undefined
+				? { location: updates.location }
+				: {}),
+			...(updates.description !== undefined
+				? { description: updates.description }
+				: {}),
 		});
 
 		if (!response.ok) {
@@ -281,7 +301,14 @@ export class GoogleCalendarAPI {
 		account: AccountConfig,
 		calendarId: string,
 		instance: CalEvent,
-		updates: { title: string; start: string; end: string; allDay: boolean },
+		updates: {
+			title: string;
+			start: string;
+			end: string;
+			allDay: boolean;
+			location?: string;
+			description?: string;
+		},
 	): Promise<void> {
 		// Fetch master to get its current RRULE
 		const master = await this.getEvent(
@@ -358,6 +385,10 @@ export class GoogleCalendarAPI {
 					},
 			recurrence: originalRecurrence, // new series inherits original RRULE, no UNTIL
 			attendees: instance.attendees,
+			...(updates.location ? { location: updates.location } : {}),
+			...(updates.description
+				? { description: updates.description }
+				: {}),
 		};
 		const postRes = await this.postWithAuth(
 			account,

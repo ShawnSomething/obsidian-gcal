@@ -106,6 +106,31 @@
   color: var(--text-normal);
 }
 
+.gcal-textarea {
+  resize: vertical;
+  min-height: 60px;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.4;
+}
+
+.gcal-btn-meet {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  color: var(--text-normal);
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+}
+
+.gcal-btn-meet:hover {
+  border-color: var(--interactive-accent);
+}
+
 .gcal-field-label {
   display: block;
   font-size: 12px;

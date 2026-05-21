@@ -6,8 +6,8 @@ type EditProps = {
   mode: "edit";
   event: CalEvent;
   askRecurring: (event: CalEvent, opts?: { title?: string; hideFollowing?: boolean; showAll?: boolean }) => Promise<"this" | "following" | "all" | null>;
-  onSave: (updates: { title: string; start: string; end: string; allDay: boolean }) => void;
-  onSplitSeries: (updates: { title: string; start: string; end: string; allDay: boolean }) => void;
+  onSave: (updates: { title: string; start: string; end: string; allDay: boolean; location?: string; description?: string }) => void;
+  onSplitSeries: (updates: { title: string; start: string; end: string; allDay: boolean; location?: string; description?: string }) => void;
   onDelete: () => void;
   onRespond?: (status: "accepted" | "declined" | "tentative") => void;
   onClose: () => void;
@@ -26,6 +26,8 @@ type CreateProps = {
     calendarId: string;
     accountId: string;
     recurrence?: string[];
+    location?: string;
+    description?: string;
   }) => void;
   onClose: () => void;
 };
@@ -57,6 +59,14 @@ export default function EventModal(props: Props) {
   const [end, setEnd] = useState(
     toLocalInput(isCreate ? (props as CreateProps).initialEnd : (props as EditProps).event.end)
   );
+  const [location, setLocation] = useState(
+    isCreate ? "" : ((props as EditProps).event.location ?? "")
+  );
+  const [description, setDescription] = useState(
+    isCreate ? "" : ((props as EditProps).event.description ?? "")
+  );
+
+  const hangoutLink = isCreate ? undefined : (props as EditProps).event.hangoutLink;
 
   const [repeat, setRepeat] = useState(false);
   const [frequency, setFrequency] = useState<RRuleFrequency>("WEEKLY");
@@ -113,12 +123,21 @@ export default function EventModal(props: Props) {
         calendarId: selectedCalendarId,
         accountId: cal?.accountId ?? "",
         recurrence,
+        location: location || undefined,
+        description: description || undefined,
       });
       return;
     }
 
     const editProps = props as EditProps;
-    const updates = { title, start: finalStart, end: finalEnd, allDay };
+    const updates = {
+      title,
+      start: finalStart,
+      end: finalEnd,
+      allDay,
+      location: location || undefined,
+      description: description || undefined,
+    };
 
     if (editProps.event.recurringEventId) {
       const choice = await editProps.askRecurring(editProps.event);
@@ -149,6 +168,15 @@ export default function EventModal(props: Props) {
           className="gcal-input"
           autoFocus
         />
+
+        {hangoutLink && (
+          <button
+            className="gcal-btn-meet"
+            onClick={() => window.open(hangoutLink, "_blank")}
+          >
+            📹 Join Google Meet
+          </button>
+        )}
 
         {isCreate && state.calendars.length > 0 && (
           <label className="gcal-field-label">
@@ -198,6 +226,28 @@ export default function EventModal(props: Props) {
             </label>
           </>
         )}
+
+        <label className="gcal-field-label">
+          Location
+          <input
+            type="text"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            placeholder="Add location"
+            className="gcal-input"
+          />
+        </label>
+
+        <label className="gcal-field-label">
+          Description
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Add description"
+            className="gcal-input gcal-textarea"
+            rows={3}
+          />
+        </label>
 
         {props.mode === "create" && (
           <>
@@ -306,7 +356,7 @@ export default function EventModal(props: Props) {
               {(["accepted", "tentative", "declined"] as const).map((status) => (
                 <button
                   key={status}
-                  className={`gcal-btn-response gcal-btn-response--${status}${props.event.selfResponseStatus === status ? " gcal-btn-response--active" : ""}`}
+                  className={`gcal-btn-response gcal-btn-response--${status}${(props as EditProps).event.selfResponseStatus === status ? " gcal-btn-response--active" : ""}`}
                   onClick={() => (props as EditProps).onRespond?.(status)}
                 >
                   {status === "accepted" ? "Yes" : status === "tentative" ? "Maybe" : "No"}

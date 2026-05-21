@@ -37,6 +37,9 @@ export interface CalEvent {
   selfResponseStatus: "accepted" | "declined" | "tentative" | "needsAction";
   recurrence?: string[];
   recurringEventId?: string;
+  location?: string;
+  description?: string;
+  hangoutLink?: string;
 }
 
 type ViewType = "day" | "3day" | "week";

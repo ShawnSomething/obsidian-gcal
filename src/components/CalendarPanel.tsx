@@ -524,13 +524,11 @@ export default function CalendarPanel({ plugin }: Props) {
           initialStart={creatingEvent.start}
           initialEnd={creatingEvent.end}
           initialAllDay={creatingEvent.allDay}
-          onSave={async ({ title, start, end, allDay, calendarId, accountId, recurrence }) => {
+          onSave={async ({ title, start, end, allDay, calendarId, accountId, recurrence, location, description }) => {
             const account = plugin.data.accounts.find((a) => a.accountId === accountId);
             if (!account) return;
             try {
-              await plugin.api.postEvent(account, calendarId, { title, start, end, allDay, recurrence });
-              setCreatingEvent(null);
-              await fetchAllRef.current?.();
+              await plugin.api.postEvent(account, calendarId, { title, start, end, allDay, recurrence, location, description });
             } catch (err) {
               dispatch({
                 type: "SET_ERROR",
