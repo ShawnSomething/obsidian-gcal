@@ -424,6 +424,39 @@ const askRecurring = (
 
 Declined events filtered out of `fcEvents` useMemo — `selfResponseStatus !== "declined"`. Events with `accepted`, `tentative`, or `needsAction` are shown.
 
+### 5.12 Calendar Visibility Persistence
+
+**Problem:** On reload, `state.calendars` is `[]` (initialState). The merge logic in `fetchAllRef` falls through to the raw API response which has `visible: true` — persisted visibility is never read.
+
+**Fix — two changes in `CalendarPanel.tsx`:**
+
+1. Save visibility to disk on every `state.calendars` change:
+```typescript
+useEffect(() => {
+  if (state.calendars.length === 0) return;
+  const visibility: Record<string, boolean> = {};
+  state.calendars.forEach((cal) => { visibility[cal.id] = cal.visible; });
+  plugin.data.calendarVisibility = visibility;
+  plugin.saveData(plugin.data);
+}, [state.calendars]);
+```
+Guard `length === 0` prevents wiping the record before data loads on init.
+
+2. Read persisted visibility in the merge logic:
+```typescript
+// Before (broken on reload):
+const existing = state.calendars.find((c) => c.id === cal.id);
+return existing ? { ...cal, visible: existing.visible } : cal;
+
+// After (correct):
+const existing = state.calendars.find((c) => c.id === cal.id);
+if (existing) return { ...cal, visible: existing.visible };
+const persisted = plugin.data.calendarVisibility?.[cal.id];
+return { ...cal, visible: persisted !== undefined ? persisted : cal.visible };
+```
+
+**Why save in CalendarPanel, not CalendarToggle:** CalendarToggle is a presentational component — it should only dispatch actions, not own side effects. CalendarPanel owns all side effects (fetching, writing, error handling). Saving visibility belongs there too. Passing `plugin` into CalendarToggle would couple a display component to the entire plugin god-object.
+
 ---
 
 ## 6. Obsidian-Specific Patterns
@@ -542,8 +575,8 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 
 ### Phase 6 — UI Polish
   6.1 Calendar Toggle
-  - [ ] Open in browser button (`htmlLink`) - htmlLink to live on the right of each account in CalendarToggle, to go to the specific account's calendar
-  - [ ] Remember which calendars were turned off, so it stays off after reload 
+  - [x] Open in browser button — `↗` button next to account email in CalendarToggle dropdown. Uses `https://accounts.google.com/AccountChooser?Email=${email}&continue=https%3A%2F%2Fcalendar.google.com` to select correct account in browser.
+  - [x] Remember which calendars were turned off — persisted via `plugin.data.calendarVisibility`. Saved in `useEffect` watching `state.calendars` in CalendarPanel. Read back in fetchAllRef merge logic on reload.
 
   6.2 Calendar View
   - [ ] Show events from all days in the current view. Currently, events from previous days in the week no longer show
@@ -603,6 +636,7 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | Recurring attendee response scope | Google API does NOT support "this and following" for response status — confirmed. Options are instance ID (this event) or master ID (all events) only. |
 | TypeScript discriminated union narrowing | `props.mode === "x"` is the only safe narrowing pattern — derived booleans (`isCreate`) and `as` casts do NOT narrow |
 | RecurringModal choice type widening | When adding new choice values (e.g. `"all"`), update the type in RecurringModalProps, askRecurring signature, EditProps.askRecurring, and CalendarPanel state — all four must stay in sync |
+| Calendar visibility on reload | `state.calendars` is `[]` on init — merge logic must fall back to `plugin.data.calendarVisibility` before defaulting to API value. Guard `length === 0` in save effect prevents wiping record before data loads. |
 
 ---
 
@@ -658,6 +692,8 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | Tentative support | Added "Maybe" as third response option | Google API supports "tentative"; omitting it would require going to Google Calendar just to set it |
 | Declined event visibility | Filter out from fcEvents | User doesn't want to see events they've rejected; accepted/tentative/needsAction remain visible |
 | Attendee response — full array required | Send all attendees, update only self entry | Google drops unlisted attendees if you send a partial array |
+| Calendar visibility persistence | useEffect in CalendarPanel watching state.calendars | CalendarToggle is presentational — side effects belong in CalendarPanel. Guard length === 0 prevents wiping on init. |
+| Open in browser URL | AccountChooser URL with email param | `/u/0` index unknown at runtime — AccountChooser selects correct account by email |
 
 ---
 
@@ -671,15 +707,16 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - Phase 3: DONE
 - Phase 4: DONE
 - Phase 5: DONE
-- Phase 6: NEXT
+- Phase 6: IN PROGRESS (6.1 done)
 
 ### Immediate Next Steps
 
-1. **Start Phase 6.1** — UI Polish. New thread. Paste this plan doc at the top.
+Start Phase 6.2 in a new thread. Paste this plan doc at the top.
 
-6.1 Calendar Toggle
-  - [ ] Open in browser button (`htmlLink`) - htmlLink to live on the right of each account in CalendarToggle, to go to the specific account's calendar
-  - [ ] Remember which calendars were turned off, so it stays off after reload 
+6.2 Calendar View
+  - [ ] Show events from all days in the current view. Currently, events from previous days in the week no longer show
+  - [ ] Calendar width to scale responsively with panel size
+  - [ ] Calendar grid options, "compact" for current view. "medium" for 30min increments taking up two cells. And "large" to show 15 minute increments take up two cells.
 
 ### Deferred Optimisations (do not start until core functionality complete)
 - **Targeted single-calendar refetch** — instead of full `fetchAllRef` after a write, only refetch events for the specific `calendarId` that changed. Cuts N requests down to 1-2. Reduces flash. Requires pulling `getEvents` into a standalone function that merges results back into `state.events` by `calendarId`.
