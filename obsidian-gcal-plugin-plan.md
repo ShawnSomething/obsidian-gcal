@@ -95,7 +95,7 @@ obsidian-gcal/
 │   │   ├── CalendarToggle.tsx    ← Show/hide individual calendars, grouped by account ✓ DONE
 │   │   ├── MiniMonth.tsx         ← Mini month navigation widget
 │   │   ├── EventModal.tsx        ← Edit + Create modal (discriminated union Props) ✓ DONE
-│   │   └── RecurringModal.tsx    ← "This / This & Following" choice ✓ DONE
+│   │   └── RecurringModal.tsx    ← "This / This & Following / All events" choice ✓ DONE
 │   ├── settings/
 │   │   └── SettingsTab.ts        ← Obsidian PluginSettingTab (account management)
 │   ├── auth/
@@ -286,7 +286,7 @@ backgroundColor: (calendars.find(c => c.id === e.calendarId)?.backgroundColor ??
 **Drag-to-move:** `PATCH` with `sendUpdates=none`. Call `revert()` on error.
 **Edit event:** `PUT` full event body, `sendUpdates=all`.
 **Create event:** `POST`, `sendUpdates=all`. Accepts optional `recurrence?: string[]`.
-**Accept/Decline:** `PATCH` attendees array (must send full array), `sendUpdates=all`. `organizer` and `creator` fields are immutable — patching attendees never changes event ownership.
+**Accept/Decline/Tentative:** `PATCH` attendees array (must send full array), `sendUpdates=all`. `organizer` and `creator` fields are immutable — patching attendees never changes event ownership.
 **Delete event (non-recurring):** `DELETE` the event URL directly via `deleteWithAuth()`.
 **Delete recurring — this event:** `DELETE` the instance ID.
 **Delete recurring — this and following:** `deleteRecurringAndFollowing()` — PATCH master UNTIL to 1 second before `instance.start`, then DELETE the instance. Rollback RRULE if DELETE fails. No POST (unlike splitRecurringSeries).
@@ -315,8 +315,7 @@ Recurring instance IDs have a `_YYYYMMDDTHHMMSSZ` suffix (e.g. `bd8d1298a0d94760
 **Attendee response on recurring events:**
 - "This event" → PATCH the instance ID
 - "All events" → PATCH the master ID (`recurringEventId`)
-- "This and following" does NOT exist in the Google Calendar API for attendee responses — verify at https://developers.google.com/calendar/api/v3/reference/events/patch before building UI for it.
-- RecurringModal options for response differ from time edits — need separate modal config or conditional prop to hide "This and following" option.
+- "This and following" does NOT exist in the Google Calendar API for attendee responses — confirmed via API docs and Google Calendar's own UI (which only shows "This event" / "All events" for RSVP).
 
 ### 5.9 FullCalendar Config Notes
 
@@ -382,20 +381,48 @@ const [countNum, setCountNum] = useState(1);
 
 Import: `import { RRuleFrequency, RRuleDay, buildRRule } from "../utils/rrule"` — static import, not dynamic.
 
-### 5.11 Accept / Decline Pattern
+### 5.11 Accept / Decline / Tentative Pattern
 
 `patchAttendeeResponse()` in `GoogleCalendarAPI.ts`:
 - Takes `attendees: Attendee[]`, finds `self: true` entry, updates its `responseStatus`
 - Sends full attendees array back — required, Google drops unlisted attendees otherwise
 - `sendUpdates=all` — organiser needs to know you responded
-- `organizer` and `creator` fields are immutable — this PATCH cannot change event ownership, no new event is created. The Akiflow "creates a new event where you're the owner" bug was caused by a POST, not a PATCH.
+- `responseStatus` type: `"accepted" | "declined" | "tentative"`
+- `organizer` and `creator` fields are immutable — this PATCH cannot change event ownership
 
-Accept/decline buttons in `EventModal` edit mode:
-- Only shown when `selfResponseStatus === "needsAction"`
-- `onRespond?: (status: "accepted" | "declined") => void` prop on `EditProps`
-- Wired in `CalendarPanel` — calls `patchAttendeeResponse`, closes modal, refetches
+**Response buttons in `EventModal` edit mode:**
+- Always shown in edit mode (not conditional on `needsAction`)
+- Three buttons: Yes (accepted), Maybe (tentative), No (declined)
+- Active state highlighted per status — green/amber/red via `gcal-btn-response--{status}` + `gcal-btn-response--active` CSS classes
+- Styled via `gcal-btn-response` base class in `styles.css`
+- Modelled on Akiflow UX — all options always visible, current selection highlighted
 
-Declined events filtered out of `fcEvents` useMemo in `CalendarPanel` — `selfResponseStatus !== "declined"`. Events with `accepted`, `tentative`, or `needsAction` are shown.
+**Recurring attendee response in `CalendarPanel`:**
+- `onRespond` checks `editingEvent.recurringEventId`
+- If recurring: calls `askRecurring` with `{ title: "RSVP to recurring event", hideFollowing: true, showAll: true }`
+- "This event" → patch instance ID; "All events" → patch `recurringEventId`
+- "This and following" is hidden — not supported by Google API for attendee responses
+
+**RecurringModal props for context-aware display:**
+```typescript
+interface RecurringModalProps {
+  eventTitle: string;
+  title?: string;          // defaults to "Edit recurring event"
+  hideFollowing?: boolean; // hides "This and following events" option
+  showAll?: boolean;       // shows "All events" option
+  onChoice: (choice: "this" | "following" | "all" | null) => void;
+}
+```
+
+**`askRecurring` signature in CalendarPanel:**
+```typescript
+const askRecurring = (
+  event: CalEvent,
+  opts?: { title?: string; hideFollowing?: boolean; showAll?: boolean }
+): Promise<"this" | "following" | "all" | null>
+```
+
+Declined events filtered out of `fcEvents` useMemo — `selfResponseStatus !== "declined"`. Events with `accepted`, `tentative`, or `needsAction` are shown.
 
 ---
 
@@ -502,27 +529,49 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - [x] `deleteRecurringAndFollowing()` added to `GoogleCalendarAPI.ts`
 - [x] Create recurring event — full RRULE UI in EventModal create mode, wired end-to-end
 
-### Phase 5 — Accept / Reject 🔄 IN PROGRESS
+### Phase 5 — Accept / Reject ✅ DONE
 - [x] `patchAttendeeResponse()` added to `GoogleCalendarAPI.ts` — patches full attendees array, `sendUpdates=all`
 - [x] `onRespond` prop added to `EditProps` in `EventModal.tsx`
-- [x] Accept/Decline buttons shown in modal when `selfResponseStatus === "needsAction"`
-- [x] Wired in `CalendarPanel` — calls `patchAttendeeResponse`, closes modal, refetches
+- [x] Accept/Decline buttons shown in modal — wired in `CalendarPanel`
 - [x] Declined events filtered from `fcEvents` — `selfResponseStatus !== "declined"`
-- [ ] Recurring event response — need to surface RecurringModal with "This event" / "All events" options (NO "this and following" — verify API support first at https://developers.google.com/calendar/api/v3/reference/events/patch)
-- [ ] RecurringModal needs a prop to conditionally hide "This and following" for response-only context
+- [x] Recurring event response — RecurringModal surfaces with "This event" / "All events" only (no "This and following" — not supported by Google API for attendee responses, confirmed via API docs + Google Calendar UI)
+- [x] RecurringModal extended with `title`, `hideFollowing`, `showAll` props for context-aware display
+- [x] `askRecurring` extended with optional `opts` param — passes config to RecurringModal
+- [x] Response buttons always shown in edit mode (not just needsAction) — Yes / Maybe / No, active state highlighted
+- [x] `patchAttendeeResponse` widened to accept `"tentative"` — all three response statuses supported
 
 ### Phase 6 — UI Polish
-- [ ] Mini month navigation widget
-- [ ] View toggle (Day / 3D / Week) using FullCalendar API
-- [ ] Open in browser button (`htmlLink`)
-- [ ] Obsidian CSS variable mapping for dark/light theme
-- [ ] Update `EventModal.tsx` with full event capabilities: title, date, start, end, recurring, all day, add guest, location, description, what calendar to add to
-- [ ] Click to view existing event details
-- [ ] Click video call link to launch url in browser
-- [ ] Add main timezone picker
+  6.1 Calendar Toggle
+  - [ ] Open in browser button (`htmlLink`) - htmlLink to live on the right of each account in CalendarToggle, to go to the specific account's calendar
+  - [ ] Remember which calendars were turned off, so it stays off after reload 
+
+  6.2 Calendar View
+  - [ ] Show events from all days in the current view. Currently, events from previous days in the week no longer show
+  - [ ] Calendar width to scale responsively with panel size
+  - [ ] Calendar grid options, "compact" for current view. "medium" for 30min increments taking up two cells. And "large" to show 15 minute increments take up two cells.
+
+  6.3 Events
+  - [ ] events that need action should have a hash lines background like excalidraw, not solid background
+  - [ ] Click video call link to launch url in browser
+  - [ ] Update `EventModal.tsx` with full event capabilities: title, date, start, end, recurring, all day, add guest, location, description, what calendar to add to
+  - [ ] Drag to create start time and end time for new events
+  - [ ] Invite others to events, when creating and editing events
+  
+  6.4 Calendar Navigation
+  - [ ] Mini month navigation widget - highlighting today, and slightly lower opacity for previous days
+  - [ ] View toggle (Day / 3D / Week) using FullCalendar API
+  - [ ] `T` button at the top left to jump to Today/This Week
+  - [ ] Left and right buttons at the top left to navigate between days/weeks
+
+  6.5 Misc  
+  - [ ] Add main timezone picker
+  - [ ] More visible loading states messages, success messages, error messages on the UI
+
 
 ### Phase 7 — Publish Prep
+- [ ] Polish event updating, creating, and deleting speeds 
 - [ ] Error handling + user-facing messages for all failure cases
+- [ ] Easier authentication method for multiple accounts, do not require GCP setup
 - [ ] README with GCP setup guide
 - [ ] GitHub releases (`main.js`, `manifest.json`, `styles.css`)
 - [ ] PR to `obsidian/obsidian-releases`
@@ -551,7 +600,9 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | RRULE BYDAY empty on weekly | Default to event start date's weekday — `DAY_MAP[new Date(startStr).getDay()] ?? "MO"` |
 | Array index in strict TS | `DAY_MAP[n]` returns `string \| undefined` — always add `?? "MO"` fallback. Use `.slice(0, 10)` not `.split("T")[0]` |
 | Attendee PATCH ownership concern | `organizer` and `creator` are immutable — sending full attendees array via PATCH never changes event ownership or creates new events. Akiflow's bug was a POST, not a PATCH. |
-| Recurring attendee response scope | Google API may not support "this and following" for response status — verify before building. Options are instance ID (this event) or master ID (all events) only. |
+| Recurring attendee response scope | Google API does NOT support "this and following" for response status — confirmed. Options are instance ID (this event) or master ID (all events) only. |
+| TypeScript discriminated union narrowing | `props.mode === "x"` is the only safe narrowing pattern — derived booleans (`isCreate`) and `as` casts do NOT narrow |
+| RecurringModal choice type widening | When adding new choice values (e.g. `"all"`), update the type in RecurringModalProps, askRecurring signature, EditProps.askRecurring, and CalendarPanel state — all four must stay in sync |
 
 ---
 
@@ -582,8 +633,10 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | Locale | enAU from @fullcalendar/core/locales/en-au | DD/MM date format, non-US |
 | EventModal timezone | toLocalInput() + new Date().toISOString() | datetime-local has no tz awareness; manual offset reattachment causes double-shift bug |
 | EventModal fields (v1) | Title, start, end, all-day only | Guests/location/description require full event fetch — deferred to later phase |
-| Recurring modal options | "This event" + "This and following" only — no "All events" | "All events" is the destructive option users avoid; "this and following" is the natural UX choice |
+| Recurring modal options (edit/drag) | "This event" + "This and following" only — no "All events" | "All events" is the destructive option users avoid; "this and following" is the natural UX choice |
+| Recurring modal options (RSVP) | "This event" + "All events" only — no "This and following" | Google API does not support "this and following" for attendee response PATCH |
 | RecurringModal state pattern | Promise-based askRecurring in CalendarPanel | Single state location, clean callers — both eventDrop and EventModal await the same function |
+| askRecurring opts param | Optional second arg `{ title?, hideFollowing?, showAll? }` | Allows same function to serve both edit and RSVP contexts without duplicating modal state |
 | Styles | All styles in styles.css using gcal- prefixed classes | No inline styles — shared classes (gcal-modal-backdrop, gcal-input, etc.) reused across components |
 | Post-write state sync | Full refetch via `fetchAllRef.current?.()` after every write | Google API can return stale data on immediate GET — optimistic updates risk UI drifting from actual Google state. Flash on refetch is acceptable. Targeted single-calendar refetch is a future optimisation (deferred). |
 | FullCalendar event updates | calendarRef mutation (getEventById + setProp/setStart/setEnd) + UPDATE_EVENT dispatch | events prop re-render causes duplicates — ref mutation is the only safe way to visually update a FC event without remounting the event source |
@@ -600,10 +653,11 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | RRULE import style | Static import at top of EventModal | Dynamic import adds async complexity for no benefit — rrule.ts is ~30 lines with no dependencies |
 | RRULE default day (weekly) | Pre-populate from event start date | Google infers start day anyway; pre-populating avoids empty day picker looking broken |
 | "Every weekday except Wednesday" UX | Weekly frequency + uncheck Wednesday in day picker | RRULE has no "except" modifier — BYDAY=MO,TU,TH,FR is the correct encoding |
-| Accept/decline button placement | Inside EventModal, not on event chip | Event chips have limited real estate; buttons on chip cause accidental clicks |
+| Response button placement | Inside EventModal, always visible in edit mode | Event chips have limited real estate; always-visible matches Akiflow UX where current selection is highlighted |
+| Response button states | Active state highlighted per status — green/amber/red | Inactive buttons muted; user can see current status at a glance and change it in one click |
+| Tentative support | Added "Maybe" as third response option | Google API supports "tentative"; omitting it would require going to Google Calendar just to set it |
 | Declined event visibility | Filter out from fcEvents | User doesn't want to see events they've rejected; accepted/tentative/needsAction remain visible |
 | Attendee response — full array required | Send all attendees, update only self entry | Google drops unlisted attendees if you send a partial array |
-| Recurring response scope | Verify "this and following" API support before building | May not exist for attendee responses — instance vs master may be the only options |
 
 ---
 
@@ -616,13 +670,16 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - Phase 2: DONE
 - Phase 3: DONE
 - Phase 4: DONE
-- Phase 5: IN PROGRESS
+- Phase 5: DONE
+- Phase 6: NEXT
 
 ### Immediate Next Steps
 
-1. **Verify** whether Google Calendar API supports "this and following" for attendee response PATCH. Check: https://developers.google.com/calendar/api/v3/reference/events/patch
-2. **Complete Phase 5** — wire recurring check into `onRespond` in `CalendarPanel`. If "this and following" is not supported: show RecurringModal with only "This event" (patch instance) and "All events" (patch master via `recurringEventId`) options. Requires a prop on `RecurringModal` to hide the "This and following" option.
-3. **Commit** and move to Phase 6.
+1. **Start Phase 6.1** — UI Polish. New thread. Paste this plan doc at the top.
+
+6.1 Calendar Toggle
+  - [ ] Open in browser button (`htmlLink`) - htmlLink to live on the right of each account in CalendarToggle, to go to the specific account's calendar
+  - [ ] Remember which calendars were turned off, so it stays off after reload 
 
 ### Deferred Optimisations (do not start until core functionality complete)
 - **Targeted single-calendar refetch** — instead of full `fetchAllRef` after a write, only refetch events for the specific `calendarId` that changed. Cuts N requests down to 1-2. Reduces flash. Requires pulling `getEvents` into a standalone function that merges results back into `state.events` by `calendarId`.
