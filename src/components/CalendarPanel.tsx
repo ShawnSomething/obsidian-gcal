@@ -76,7 +76,9 @@ export default function CalendarPanel({ plugin }: Props) {
 
       const merged = allCalendars.map((cal) => {
         const existing = state.calendars.find((c) => c.id === cal.id);
-        return existing ? { ...cal, visible: existing.visible } : cal;
+        if (existing) return { ...cal, visible: existing.visible };
+        const persisted = plugin.data.calendarVisibility?.[cal.id];
+        return { ...cal, visible: persisted !== undefined ? persisted : cal.visible }
       });
 
       dispatch({ type: "SET_CALENDARS", payload: merged });
@@ -111,6 +113,14 @@ export default function CalendarPanel({ plugin }: Props) {
     const interval = setInterval(() => fetchAllRef.current?.(), 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (state.calendars.length === 0) return;
+    const visibility: Record<string, boolean> = {};
+    state.calendars.forEach((cal) => { visibility[cal.id] = cal.visible; });
+    plugin.data.calendarVisibility = visibility;
+    plugin.saveData(plugin.data);
+  }, [state.calendars]);
 
   const fcEvents = useMemo(
     () =>
