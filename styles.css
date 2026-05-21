@@ -243,3 +243,83 @@
 .gcal-density-large .fc-timegrid-slot {
   height: 40px;
 }
+
+/* ─── needsAction crosshatch ─────────────────────────────────── */
+
+.gcal-event-needs-action {
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.3) 0px,
+      rgba(255, 255, 255, 0.3) 1px,
+      transparent 1px,
+      transparent 5px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.3) 0px,
+      rgba(255, 255, 255, 0.3) 1px,
+      transparent 1px,
+      transparent 5px
+    ) !important;
+}
+
+/* ─── CalendarPanel layout ───────────────────────────────────── */
+
+.gcal-panel-container {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.gcal-panel-header {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 4px 8px;
+  flex-shrink: 0;
+}
+
+.gcal-panel-btn-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  color: var(--text-normal);
+  font-size: 14px;
+}
+
+.gcal-panel-btn-icon:disabled {
+  cursor: not-allowed;
+  color: var(--text-muted);
+}
+
+.gcal-panel-btn-density {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  color: var(--text-normal);
+  font-size: 12px;
+}
+
+.gcal-panel-error {
+  color: var(--text-error);
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.gcal-panel-loading {
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.gcal-calendar-wrapper {
+  flex: 1;
+  overflow: hidden;
+}

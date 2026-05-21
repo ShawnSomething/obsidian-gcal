@@ -11,6 +11,7 @@ import EventModal from "./EventModal";
 import { RecurringModal } from "./RecurringModal";
 import enAU from "@fullcalendar/core/locales/en-au";
 import { ViewDensity } from "../api/types";
+import { desaturateHex } from "../utils/color";
 
 interface Props {
   plugin: GCalPlugin;
@@ -167,34 +168,20 @@ export default function CalendarPanel({ plugin }: Props) {
           end: e.end,
           allDay: e.allDay,
           backgroundColor:
-            (state.calendars.find((c) => c.id === e.calendarId)?.backgroundColor ?? "#4285F4") + "CC",
-          borderColor: "transparent",
+            desaturateHex(state.calendars.find((c) => c.id === e.calendarId)?.backgroundColor ?? "#4285F4", 0.2) + "CC",
+          borderColor: "rgba(0, 0, 0, 0.4)",
           extendedProps: { calEvent: e },
         })),
     [state.events, state.calendars]
   );
 
   return (
-    <div style={{ height: "100%", width: "100%", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-      <div style={{
-        display: "flex",
-        justifyContent: "flex-end",
-        alignItems: "center",
-        padding: "4px 8px",
-        flexShrink: 0,
-      }}>
+    <div className="gcal-panel-container">
+      <div className="gcal-panel-header">
         <button
           onClick={() => fetchAllRef.current?.()}
           disabled={state.isLoading}
-          style={{
-            background: "none",
-            border: "none",
-            cursor: state.isLoading ? "not-allowed" : "pointer",
-            padding: "4px 6px",
-            borderRadius: "4px",
-            color: state.isLoading ? "var(--text-muted)" : "var(--text-normal)",
-            fontSize: "14px",
-          }}
+          className="gcal-panel-btn-icon"
           title="Refresh calendars"
         >
           ↻
@@ -206,15 +193,7 @@ export default function CalendarPanel({ plugin }: Props) {
               d === "compact" ? "medium" : d === "medium" ? "large" : "compact"
             )
           }
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            padding: "4px 6px",
-            borderRadius: "4px",
-            color: "var(--text-normal)",
-            fontSize: "12px",
-          }}
+          className="gcal-panel-btn-density"
           title="Calendar density"
         >
           {density === "compact" ? "S" : density === "medium" ? "M" : "L"}
@@ -222,17 +201,17 @@ export default function CalendarPanel({ plugin }: Props) {
       </div>
 
       {state.error && (
-        <div style={{ color: "var(--text-error)", padding: "4px 8px", fontSize: "12px" }}>
+        <div className="gcal-panel-error">
           {state.error}
         </div>
       )}
       {state.isLoading && state.events.length === 0 && (
-        <div style={{ padding: "4px 8px", fontSize: "12px", color: "var(--text-muted)" }}>
+        <div className="gcal-panel-loading">
           Loading calendars...
         </div>
       )}
 
-      <div ref={calendarWrapperRef} className={`gcal-density-${density}`} style={{ flex: 1, overflow: "hidden" }}>
+      <div ref={calendarWrapperRef} className={`gcal-density-${density} gcal-calendar-wrapper`}>
         <FullCalendar
           slotDuration={density === "large" ? "00:15:00" : "00:30:00"}
           slotLabelInterval={density === "large" ? "00:30:00" : "01:00:00"}
@@ -248,6 +227,12 @@ export default function CalendarPanel({ plugin }: Props) {
           headerToolbar={false}
           firstDay={1}
           editable={true}
+          eventClassNames={(arg) => {
+            const calEvent = arg.event.extendedProps.calEvent as CalEvent;
+            return calEvent.selfResponseStatus === "needsAction"
+              ? ["gcal-event-needs-action"]
+              : [];
+          }}
           eventDrop={async (info) => {
             const calEvent = info.event.extendedProps.calEvent as CalEvent;
             const account = plugin.data.accounts.find(
