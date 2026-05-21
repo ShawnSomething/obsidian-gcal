@@ -24,10 +24,18 @@ const VIEW_MAP = {
 function getViewWindow(date: Date, view: "day" | "3day" | "week"): { timeMin: Date; timeMax: Date } {
   const start = new Date(date);
   start.setHours(0, 0, 0, 0);
+
+  if (view === "week") {
+    const dayOfWeek = start.getDay();
+    const daysFromMonday = (dayOfWeek + 6) % 7;
+    start.setDate(start.getDate() - daysFromMonday);
+  }
+
   const end = new Date(start);
   if (view === "day") end.setDate(end.getDate() + 1);
   else if (view === "3day") end.setDate(end.getDate() + 3);
   else end.setDate(end.getDate() + 7);
+
   return { timeMin: start, timeMax: end };
 }
 
@@ -59,6 +67,7 @@ export default function CalendarPanel({ plugin }: Props) {
   const fetchAllRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
   const calendarRef = useRef<FullCalendar>(null);
+  const calendarWrapperRef = useRef<HTMLDivElement>(null);
 
   fetchAllRef.current = async () => {
     const accounts = plugin.data.accounts;
@@ -122,6 +131,18 @@ export default function CalendarPanel({ plugin }: Props) {
     plugin.saveData(plugin.data);
   }, [state.calendars]);
 
+  useEffect(() => {
+    const el = calendarWrapperRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => {
+      setTimeout(() => {
+        calendarRef.current?.getApi().updateSize();
+      }, 50);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   const fcEvents = useMemo(
     () =>
       state.events
@@ -145,7 +166,7 @@ export default function CalendarPanel({ plugin }: Props) {
   );
 
   return (
-    <div style={{ height: "100%", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+    <div style={{ height: "100%", width: "100%", overflow: "hidden", display: "flex", flexDirection: "column" }}>
       <div style={{
         display: "flex",
         justifyContent: "flex-end",
@@ -183,8 +204,9 @@ export default function CalendarPanel({ plugin }: Props) {
         </div>
       )}
 
-      <div style={{ flex: 1, overflow: "hidden" }}>
+      <div ref={calendarWrapperRef} style={{ flex: 1, overflow: "hidden" }}>
         <FullCalendar
+          ref={calendarRef}
           plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
           initialView={VIEW_MAP[state.activeView]}
           height="100%"
