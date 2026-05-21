@@ -526,6 +526,27 @@ Three density modes persisted to `plugin.data.viewDensity`:
 - Toggle button in header (after CalendarToggle) cycles S → M → L → S
 - CSS targets `.gcal-density-{mode} .fc-timegrid-slot` for row height
 
+### 5.14 RecurringModal Styling
+
+Modal is centred, options have generous vertical padding, cancel button centred. Key CSS values:
+
+```css
+.gcal-modal {
+  padding: 32px 28px 24px;
+  border-radius: 10px;
+  gap: 16px;
+}
+.gcal-modal-title { text-align: center; }
+.gcal-modal-subtitle { text-align: center; }
+.gcal-modal-option {
+  align-items: center;
+  text-align: center;
+  padding: 22px 12px;   /* 22px vertical — enough breathing room */
+}
+.gcal-modal-footer { justify-content: center; }
+.gcal-modal-cancel { padding: 7px 24px; }
+```
+
 ---
 
 ## 6. Obsidian-Specific Patterns
@@ -659,11 +680,10 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
   - [x] Event chip colors desaturated via desaturateHex() in utils/color.ts (amount: 0.2)
   - [x] Update `EventModal.tsx` with full event capabilities: title, date, start, end, recurring, all day, add guest, location, description, what calendar to add to
   - [x] Click video call link to launch URL in browser
-  - [x] Show attending guests, name and response status. 
+  - [x] Show attending guests, name and response status
   - [x] Styling the Event modal for better UI
-  - [ ] Styling the recurring modal for better UI
+  - [x] Styling the recurring modal for better UI — centred layout, 22px vertical padding on option buttons, centred cancel
   - [ ] Drag to create start time and end time for new events
-  - [ ] Invite others to events, when creating and editing events
 
   6.4 Calendar Navigation
   - [ ] Add horizontal line on current time across calendar
@@ -779,6 +799,8 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | Event border | `rgba(0,0,0,0.4)` | Fully opaque black is too harsh against coloured chips |
 | Event color saturation | `desaturateHex()` at `0.2` in `utils/color.ts` | Google calendar colors at full saturation are too bright; 0.2 takes the edge off without washing out calendar distinction |
 | Saturation helper location | `utils/color.ts` | Keeps CalendarPanel clean; color transforms are reusable utility logic |
+| RecurringModal layout | Centred text + centred footer | Matches the visual weight of a dialog — option buttons read as choices, not left-aligned list items |
+| RecurringModal option padding | 22px vertical | 12px was too cramped; 22px gives each option enough breathing room to feel tappable |
 
 ---
 
@@ -792,13 +814,23 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - Phase 3: DONE
 - Phase 4: DONE
 - Phase 5: DONE
-- Phase 6: IN PROGRESS (6.1 done, 6.2 done)
+- Phase 6: IN PROGRESS (6.1 done, 6.2 done, 6.3 in progress)
 
 ### Immediate Next Steps
 
-Phase 6: IN PROGRESS (6.1 done, 6.2 done, 6.3 in progress)
+Phase 6.3 remaining:
+- [ ] Drag to create start time and end time for new events
 
-Next: Task 9 of 6.3 - Styling the recurring modal for better UI 
+Phase 6.4 (not started):
+- [ ] Add horizontal line on current time across calendar
+- [ ] Mini month navigation widget
+- [ ] View toggle (Day / 3D / Week)
+- [ ] Today (`T`) button
+- [ ] Left/right navigation buttons
+
+Phase 6.5 (not started):
+- [ ] Main timezone picker
+- [ ] Loading / success / error states in UI
 
 ### Deferred Optimisations (do not start until core functionality complete)
 - **Targeted single-calendar refetch** — instead of full `fetchAllRef` after a write, only refetch events for the specific `calendarId` that changed. Cuts N requests down to 1-2. Reduces flash. Requires pulling `getEvents` into a standalone function that merges results back into `state.events` by `calendarId`.
