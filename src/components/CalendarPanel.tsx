@@ -227,6 +227,7 @@ export default function CalendarPanel({ plugin }: Props) {
           headerToolbar={false}
           firstDay={1}
           editable={true}
+          selectable={true}
           eventClassNames={(arg) => {
             const calEvent = arg.event.extendedProps.calEvent as CalEvent;
             return calEvent.selfResponseStatus === "needsAction"
@@ -383,12 +384,13 @@ export default function CalendarPanel({ plugin }: Props) {
             setEditingEvent(info.event.extendedProps.calEvent as CalEvent);
           }}
 
-          dateClick={(info) => {
-            const start = info.date.toISOString();
-            const end = info.allDay
-              ? info.date.toISOString()
-              : new Date(info.date.getTime() + 60 * 60 * 1000).toISOString();
-            setCreatingEvent({ start, end, allDay: info.allDay });
+          select={(info) => {
+            calendarRef.current?.getApi().unselect();
+            setCreatingEvent({
+              start: info.startStr,
+              end: info.endStr,
+              allDay: info.allDay,
+            });
           }}
         />
       </div>
@@ -529,6 +531,9 @@ export default function CalendarPanel({ plugin }: Props) {
             if (!account) return;
             try {
               await plugin.api.postEvent(account, calendarId, { title, start, end, allDay, recurrence, location, description });
+              setCreatingEvent(null);
+              await new Promise(res => setTimeout(res, 800));
+              await fetchAllRef.current?.();
             } catch (err) {
               dispatch({
                 type: "SET_ERROR",
