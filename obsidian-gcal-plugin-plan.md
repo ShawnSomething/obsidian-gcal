@@ -659,8 +659,9 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
   - [x] Event chip colors desaturated via desaturateHex() in utils/color.ts (amount: 0.2)
   - [x] Update `EventModal.tsx` with full event capabilities: title, date, start, end, recurring, all day, add guest, location, description, what calendar to add to
   - [x] Click video call link to launch URL in browser
-  - [ ] Show attending guests, name and response status. 
-  - [ ] Styling the modal for better UI
+  - [x] Show attending guests, name and response status. 
+  - [x] Styling the Event modal for better UI
+  - [ ] Styling the recurring modal for better UI
   - [ ] Drag to create start time and end time for new events
   - [ ] Invite others to events, when creating and editing events
 
@@ -797,7 +798,7 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 
 Phase 6: IN PROGRESS (6.1 done, 6.2 done, 6.3 in progress)
 
-Next: Task 7 of 6.3 - Show attending guests, name and response status. 
+Next: Task 9 of 6.3 - Styling the recurring modal for better UI 
 
 ### Deferred Optimisations (do not start until core functionality complete)
 - **Targeted single-calendar refetch** — instead of full `fetchAllRef` after a write, only refetch events for the specific `calendarId` that changed. Cuts N requests down to 1-2. Reduces flash. Requires pulling `getEvents` into a standalone function that merges results back into `state.events` by `calendarId`.
