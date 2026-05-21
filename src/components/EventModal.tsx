@@ -249,6 +249,24 @@ export default function EventModal(props: Props) {
           />
         </label>
 
+        {props.mode === "edit" && (props as EditProps).event.attendees.length > 0 && (
+          <div className="gcal-field-label">
+            Guests
+            <div className="gcal-attendee-list">
+              {(props as EditProps).event.attendees.map((a) => (
+                <div key={a.email} className="gcal-attendee-row">
+                  <span className="gcal-attendee-email">{a.email}</span>
+                  <span className={`gcal-attendee-status--${a.responseStatus}`}>
+                    {a.responseStatus === "accepted" ? "✓"
+                      : a.responseStatus === "declined" ? "✗"
+                        : a.responseStatus === "tentative" ? "?"
+                          : "–"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {props.mode === "create" && (
           <>
             <label className="gcal-checkbox-label">

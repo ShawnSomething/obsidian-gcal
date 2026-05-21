@@ -348,3 +348,28 @@
   flex: 1;
   overflow: hidden;
 }
+
+/* ─── Attendee list ──────────────────────────────────────────── */
+
+.gcal-attendee-list {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gcal-attendee-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85em;
+}
+
+.gcal-attendee-email {
+  color: var(--text-muted);
+}
+
+.gcal-attendee-status--accepted { color: var(--interactive-accent); }
+.gcal-attendee-status--declined { color: var(--text-error); }
+.gcal-attendee-status--tentative { color: #f59e0b; }
+.gcal-attendee-status--needsAction { color: var(--text-muted); }
