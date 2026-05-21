@@ -233,3 +233,13 @@
   color: white;
   border-color: var(--text-error);
 }
+
+/* ─── Calendar density ───────────────────────────────────────── */
+
+.gcal-density-medium .fc-timegrid-slot {
+  height: 40px;
+}
+
+.gcal-density-large .fc-timegrid-slot {
+  height: 40px;
+}

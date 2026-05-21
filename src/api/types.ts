@@ -11,4 +11,7 @@ export interface PluginData {
 	calendarVisibility: Record<string, boolean>;
 	clientId: string;
 	clientSecret: string;
+	viewDensity: ViewDensity;
 }
+
+export type ViewDensity = "compact" | "medium" | "large";

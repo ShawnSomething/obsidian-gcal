@@ -61,6 +61,7 @@ export class TokenStore {
 			calendarVisibility: {},
 			clientId: "",
 			clientSecret: "",
+			viewDensity: "compact",
 		};
 	}
 }

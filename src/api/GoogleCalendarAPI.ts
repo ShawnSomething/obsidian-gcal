@@ -359,7 +359,6 @@ export class GoogleCalendarAPI {
 			recurrence: originalRecurrence, // new series inherits original RRULE, no UNTIL
 			attendees: instance.attendees,
 		};
-		console.log("new event payload:", JSON.stringify(newEvent, null, 2));
 		const postRes = await this.postWithAuth(
 			account,
 			`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?sendUpdates=all`,

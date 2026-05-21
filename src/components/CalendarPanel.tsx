@@ -10,6 +10,7 @@ import CalendarToggle from "./CalendarToggle";
 import EventModal from "./EventModal";
 import { RecurringModal } from "./RecurringModal";
 import enAU from "@fullcalendar/core/locales/en-au";
+import { ViewDensity } from "../api/types";
 
 interface Props {
   plugin: GCalPlugin;
@@ -54,6 +55,9 @@ export default function CalendarPanel({ plugin }: Props) {
     showAll?: boolean;
     resolve: (choice: "this" | "following" | "all" | null) => void;
   } | null>(null);
+  const [density, setDensity] = useState<ViewDensity>(
+    plugin.data.viewDensity ?? "compact"
+  );
 
   const askRecurring = (
     event: CalEvent,
@@ -143,6 +147,11 @@ export default function CalendarPanel({ plugin }: Props) {
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    plugin.data.viewDensity = density;
+    plugin.saveData(plugin.data);
+  }, [density]);
+
   const fcEvents = useMemo(
     () =>
       state.events
@@ -191,6 +200,25 @@ export default function CalendarPanel({ plugin }: Props) {
           ↻
         </button>
         <CalendarToggle />
+        <button
+          onClick={() =>
+            setDensity((d) =>
+              d === "compact" ? "medium" : d === "medium" ? "large" : "compact"
+            )
+          }
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: "4px 6px",
+            borderRadius: "4px",
+            color: "var(--text-normal)",
+            fontSize: "12px",
+          }}
+          title="Calendar density"
+        >
+          {density === "compact" ? "S" : density === "medium" ? "M" : "L"}
+        </button>
       </div>
 
       {state.error && (
@@ -204,8 +232,10 @@ export default function CalendarPanel({ plugin }: Props) {
         </div>
       )}
 
-      <div ref={calendarWrapperRef} style={{ flex: 1, overflow: "hidden" }}>
+      <div ref={calendarWrapperRef} className={`gcal-density-${density}`} style={{ flex: 1, overflow: "hidden" }}>
         <FullCalendar
+          slotDuration={density === "large" ? "00:15:00" : "00:30:00"}
+          slotLabelInterval={density === "large" ? "00:30:00" : "01:00:00"}
           ref={calendarRef}
           plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
           initialView={VIEW_MAP[state.activeView]}
