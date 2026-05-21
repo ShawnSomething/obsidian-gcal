@@ -1,4 +1,5 @@
-/* RecurringModal */
+/* ─── RecurringModal ─────────────────────────────────────────── */
+
 .gcal-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -14,11 +15,11 @@
   border: 1px solid var(--background-modifier-border);
   border-radius: 8px;
   padding: 24px;
-  width: 340px;
+  width: 420px;
   max-width: 90vw;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
 .gcal-modal-title {
@@ -92,7 +93,7 @@
   color: var(--text-normal);
 }
 
-/* ─── Shared inputs ─────────────────────────────────────────── */
+/* ─── Shared inputs ──────────────────────────────────────────── */
 
 .gcal-input {
   display: block;
@@ -112,6 +113,8 @@
   font-family: inherit;
   font-size: inherit;
   line-height: 1.4;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .gcal-btn-meet {
@@ -163,9 +166,8 @@
   margin-right: auto;
 }
 
-
-/* ─── EventModal ─────────────────────────────────────────────── */
-
+/* ─── EventModal: header ─────────────────────────────────────── */
+/* kept for RecurringModal which still uses this class */
 .gcal-modal-header {
   display: flex;
   justify-content: space-between;
@@ -177,47 +179,295 @@
   border: none;
   cursor: pointer;
   color: var(--text-muted);
+  flex-shrink: 0;
 }
 
-/* ─── Recurrence UI ──────────────────────────────────────────── */
+/* ─── EventModal: title row ──────────────────────────────────── */
 
-.gcal-recurrence-block {
+.gcal-modal-title-row {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 8px;
-  padding: 8px 0;
-  border-top: 1px solid var(--background-modifier-border);
+  margin-bottom: 10px;
 }
 
-.gcal-day-picker {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-.gcal-day-btn {
-  padding: 4px 8px;
-  border-radius: 4px;
-  border: 1px solid var(--background-modifier-border);
-  background: var(--background-secondary);
+.gcal-modal-title-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid var(--background-modifier-border);
   color: var(--text-normal);
-  cursor: pointer;
-  font-size: 12px;
+  font-size: 18px;
+  font-weight: 600;
+  padding: 4px 0;
+  min-width: 0;
 }
 
-.gcal-day-btn--active {
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
+.gcal-modal-title-input:focus {
+  outline: none;
+  border-bottom-color: var(--interactive-accent);
+}
+
+.gcal-modal-title-input::placeholder {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* ─── EventModal: datetime chip row ─────────────────────────── */
+
+.gcal-datetime-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 0 10px;
+}
+
+.gcal-datetime-chip {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 14px;
+  padding: 4px 10px;
+  color: var(--text-normal);
+  font-size: 13px;
+  cursor: pointer;
+  max-width: 200px;
+}
+
+.gcal-datetime-chip:focus {
+  outline: none;
   border-color: var(--interactive-accent);
 }
 
-/* ─── Response buttons ───────────────────────────────────────── */
+.gcal-datetime-arrow {
+  color: var(--text-muted);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.gcal-allday-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  margin-left: 4px;
+  user-select: none;
+}
+
+/* ─── EventModal: calendar row (create mode) ─────────────────── */
+
+.gcal-calendar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0 8px;
+}
+
+.gcal-calendar-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.gcal-calendar-select {
+  background: transparent;
+  border: none;
+  color: var(--text-normal);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.gcal-calendar-select:focus {
+  outline: none;
+}
+
+/* ─── EventModal: section divider ────────────────────────────── */
+
+.gcal-modal-divider {
+  height: 1px;
+  background: var(--background-modifier-border);
+  margin: 6px 0;
+}
+
+/* ─── EventModal: icon + field rows ─────────────────────────── */
+
+.gcal-field-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 5px 0;
+}
+
+.gcal-field-icon {
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  margin-top: 5px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.gcal-field-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.gcal-field-input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid transparent;
+  color: var(--text-normal);
+  font-size: 14px;
+  padding: 4px 0;
+  width: 100%;
+}
+
+.gcal-field-input::placeholder {
+  color: var(--text-muted);
+}
+
+.gcal-field-input:hover {
+  border-bottom-color: var(--background-modifier-border);
+}
+
+.gcal-field-input:focus {
+  outline: none;
+  border-bottom-color: var(--interactive-accent);
+}
+
+/* ─── EventModal: description HTML ──────────────────────────── */
+
+.gcal-description-html {
+  min-height: 40px;
+  font-size: 0.85em;
+  line-height: 1.5;
+  overflow-y: auto;
+  max-height: 150px;
+  color: var(--text-normal);
+}
+
+.gcal-description-html a {
+  color: var(--interactive-accent);
+}
+
+.gcal-modal-meet-icon {
+  background: none;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.gcal-modal-meet-icon:hover {
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+}
+
+.gcal-field-sublabel {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ─── EventModal: guests section ─────────────────────────────── */
+
+.gcal-guests-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.gcal-guests-count {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-normal);
+  margin-bottom: 2px;
+}
+
+.gcal-attendee-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gcal-attendee-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 0;
+}
+
+.gcal-attendee-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+  flex-shrink: 0;
+}
+
+.gcal-attendee-email {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gcal-attendee-status {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.gcal-attendee-status--accepted  { color: #34A853; }
+.gcal-attendee-status--declined  { color: #EA4335; }
+.gcal-attendee-status--tentative { color: #FBBC04; }
+.gcal-attendee-status--needsAction { color: var(--text-muted); }
+
+.gcal-see-all-btn {
+  background: none;
+  border: none;
+  color: var(--interactive-accent);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 0;
+  text-align: left;
+}
+
+.gcal-see-all-btn:hover {
+  text-decoration: underline;
+}
+
+/* ─── EventModal: response buttons ──────────────────────────── */
 
 .gcal-response-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 8px;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.gcal-response-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .gcal-response-buttons {
@@ -257,6 +507,37 @@
   background: var(--text-error);
   color: white;
   border-color: var(--text-error);
+}
+
+/* ─── Recurrence UI ──────────────────────────────────────────── */
+
+.gcal-recurrence-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.gcal-day-picker {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.gcal-day-btn {
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.gcal-day-btn--active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
 }
 
 /* ─── Calendar density ───────────────────────────────────────── */
@@ -348,28 +629,3 @@
   flex: 1;
   overflow: hidden;
 }
-
-/* ─── Attendee list ──────────────────────────────────────────── */
-
-.gcal-attendee-list {
-  margin-top: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.gcal-attendee-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.85em;
-}
-
-.gcal-attendee-email {
-  color: var(--text-muted);
-}
-
-.gcal-attendee-status--accepted { color: var(--interactive-accent); }
-.gcal-attendee-status--declined { color: var(--text-error); }
-.gcal-attendee-status--tentative { color: #f59e0b; }
-.gcal-attendee-status--needsAction { color: var(--text-muted); }

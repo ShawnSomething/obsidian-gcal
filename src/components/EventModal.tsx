@@ -43,6 +43,17 @@ function toLocalInput(isoString: string): string {
 const DAY_MAP: RRuleDay[] = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
 const getStartDay = (startStr: string): RRuleDay => DAY_MAP[new Date(startStr).getDay()] ?? "MO";
 
+const AVATAR_PALETTE = ["#4285F4", "#EA4335", "#34A853", "#FBBC04", "#9B59B6", "#E67E22", "#16A085"];
+function getAvatarColor(email: string): string | undefined {
+  let hash = 0;
+  for (let i = 0; i < email.length; i++) {
+    hash = email.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return AVATAR_PALETTE[Math.abs(hash) % AVATAR_PALETTE.length];
+}
+
+const GUEST_PREVIEW_COUNT = 3;
+
 export default function EventModal(props: Props) {
   const { state } = useCalendar();
   const isCreate = props.mode === "create";
@@ -65,12 +76,16 @@ export default function EventModal(props: Props) {
   const [description, setDescription] = useState(
     isCreate ? "" : ((props as EditProps).event.description ?? "")
   );
+  const [showAllGuests, setShowAllGuests] = useState(false);
 
   const hangoutLink = isCreate ? undefined : (props as EditProps).event.hangoutLink;
+  const attendees = isCreate ? [] : (props as EditProps).event.attendees;
+  const visibleAttendees = showAllGuests ? attendees : attendees.slice(0, GUEST_PREVIEW_COUNT);
 
+  // Recurrence state (create mode only)
   const [repeat, setRepeat] = useState(false);
   const [frequency, setFrequency] = useState<RRuleFrequency>("WEEKLY");
-  const [interval, setInterval] = useState(1);
+  const [interval, setIntervalVal] = useState(1);
   const [days, setDays] = useState<RRuleDay[]>([getStartDay(start)]);
   const [endType, setEndType] = useState<"never" | "until" | "count">("never");
   const [untilDate, setUntilDate] = useState("");
@@ -78,7 +93,7 @@ export default function EventModal(props: Props) {
 
   const ALL_DAYS: RRuleDay[] = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
   const DAY_LABELS: Record<RRuleDay, string> = {
-    MO: "Mo", TU: "Tu", WE: "We", TH: "Th", FR: "Fr", SA: "Sa", SU: "Su"
+    MO: "Mo", TU: "Tu", WE: "We", TH: "Th", FR: "Fr", SA: "Sa", SU: "Su",
   };
 
   const toggleDay = (day: RRuleDay) => {
@@ -87,7 +102,9 @@ export default function EventModal(props: Props) {
     );
   };
 
-  const defaultCal = state.calendars.find((c) => c.visible && (c.accessRole === "owner" || c.accessRole === "writer")) ?? state.calendars[0];
+  const defaultCal =
+    state.calendars.find(c => c.visible && (c.accessRole === "owner" || c.accessRole === "writer")) ??
+    state.calendars[0];
   const [selectedCalendarId, setSelectedCalendarId] = useState(defaultCal?.id ?? "");
 
   const handleSave = async () => {
@@ -97,8 +114,7 @@ export default function EventModal(props: Props) {
     const finalEnd = allDay ? endISO.slice(0, 10) : endISO;
 
     if (isCreate) {
-      const cal = state.calendars.find((c) => c.id === selectedCalendarId);
-
+      const cal = state.calendars.find(c => c.id === selectedCalendarId);
       let recurrence: string[] | undefined;
       if (repeat) {
         const rrule = buildRRule({
@@ -114,7 +130,6 @@ export default function EventModal(props: Props) {
         });
         recurrence = [rrule];
       }
-
       (props as CreateProps).onSave({
         title,
         start: finalStart,
@@ -151,129 +166,207 @@ export default function EventModal(props: Props) {
     editProps.onSave(updates);
   };
 
+  const selectedCal = state.calendars.find(c => c.id === selectedCalendarId);
+
   return (
     <div className="gcal-modal-backdrop" onClick={props.onClose}>
-      <div className="gcal-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="gcal-modal" onClick={e => e.stopPropagation()}>
 
-        <div className="gcal-modal-header">
-          <span className="gcal-modal-title">{isCreate ? "New Event" : "Edit Event"}</span>
-          <button className="gcal-modal-close" onClick={props.onClose}>✕</button>
+        {/* Title row */}
+        <div className="gcal-modal-title-row">
+          <input
+            type="text"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            placeholder="Event title"
+            className="gcal-modal-title-input"
+            autoFocus
+          />
+          {hangoutLink && (
+            <button
+              className="gcal-modal-meet-icon"
+              onClick={() => window.open(hangoutLink, "_blank")}
+              title="Join Google Meet"
+            >
+              📹
+            </button>
+          )}
         </div>
 
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Event title"
-          className="gcal-input"
-          autoFocus
-        />
-
-        {hangoutLink && (
-          <button
-            className="gcal-btn-meet"
-            onClick={() => window.open(hangoutLink, "_blank")}
-          >
-            📹 Join Google Meet
-          </button>
-        )}
-
-        {isCreate && state.calendars.length > 0 && (
-          <label className="gcal-field-label">
-            Calendar
-            <select
-              value={selectedCalendarId}
-              onChange={(e) => setSelectedCalendarId(e.target.value)}
-              className="gcal-input"
-            >
-              {state.calendars.filter(c => c.accessRole === "owner" || c.accessRole === "writer").map((cal) => (
-                <option key={cal.id} value={cal.id}>
-                  {cal.summary}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-
-        <label className="gcal-checkbox-label">
-          <input
-            type="checkbox"
-            checked={allDay}
-            onChange={(e) => setAllDay(e.target.checked)}
-          />
-          All day
-        </label>
-
-        {!allDay && (
-          <>
-            <label className="gcal-field-label">
-              Start
+        {/* Datetime row */}
+        <div className="gcal-datetime-row">
+          {allDay ? (
+            <>
+              <input
+                type="date"
+                value={start.slice(0, 10)}
+                onChange={e => setStart(e.target.value + "T00:00")}
+                className="gcal-datetime-chip"
+              />
+              <span className="gcal-datetime-arrow">→</span>
+              <input
+                type="date"
+                value={end.slice(0, 10)}
+                onChange={e => setEnd(e.target.value + "T00:00")}
+                className="gcal-datetime-chip"
+              />
+            </>
+          ) : (
+            <>
               <input
                 type="datetime-local"
                 value={start}
-                onChange={(e) => setStart(e.target.value)}
-                className="gcal-input"
+                onChange={e => setStart(e.target.value)}
+                className="gcal-datetime-chip"
               />
-            </label>
-            <label className="gcal-field-label">
-              End
+              <span className="gcal-datetime-arrow">→</span>
               <input
                 type="datetime-local"
                 value={end}
-                onChange={(e) => setEnd(e.target.value)}
-                className="gcal-input"
+                onChange={e => setEnd(e.target.value)}
+                className="gcal-datetime-chip"
               />
-            </label>
-          </>
+            </>
+          )}
+          <label className="gcal-allday-label">
+            <input
+              type="checkbox"
+              checked={allDay}
+              onChange={e => setAllDay(e.target.checked)}
+            />
+            All day
+          </label>
+        </div>
+
+        {/* Calendar row */}
+        {isCreate && state.calendars.length > 0 && (
+          <div className="gcal-calendar-row">
+            <span
+              className="gcal-calendar-dot"
+              style={{ background: selectedCal?.backgroundColor ?? "#4285F4" }}
+            />
+            <select
+              value={selectedCalendarId}
+              onChange={e => setSelectedCalendarId(e.target.value)}
+              className="gcal-calendar-select"
+            >
+              {state.calendars
+                .filter(c => c.accessRole === "owner" || c.accessRole === "writer")
+                .map(cal => (
+                  <option key={cal.id} value={cal.id}>{cal.summary}</option>
+                ))}
+            </select>
+          </div>
         )}
 
-        <label className="gcal-field-label">
-          Location
+        <div className="gcal-modal-divider" />
+
+        {/* Description */}
+        <div className="gcal-field-row">
+          <span className="gcal-field-icon">☰</span>
+          <div className="gcal-field-body">
+            <span className="gcal-field-sublabel">Description</span>
+            {props.mode === "edit" ? (
+              <div
+                className="gcal-description-html"
+                dangerouslySetInnerHTML={{ __html: description }}
+              />
+            ) : (
+              <textarea
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                placeholder="Add description"
+                className="gcal-textarea"
+                rows={3}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Location */}
+        <div className="gcal-field-row">
+          <span className="gcal-field-icon">📍</span>
           <input
             type="text"
             value={location}
-            onChange={(e) => setLocation(e.target.value)}
+            onChange={e => setLocation(e.target.value)}
             placeholder="Add location"
-            className="gcal-input"
+            className="gcal-field-input"
           />
-        </label>
+        </div>
 
-        <label className="gcal-field-label">
-          Description
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Add description"
-            className="gcal-input gcal-textarea"
-            rows={3}
-          />
-        </label>
-
-        {props.mode === "edit" && (props as EditProps).event.attendees.length > 0 && (
-          <div className="gcal-field-label">
-            Guests
-            <div className="gcal-attendee-list">
-              {(props as EditProps).event.attendees.map((a) => (
-                <div key={a.email} className="gcal-attendee-row">
-                  <span className="gcal-attendee-email">{a.email}</span>
-                  <span className={`gcal-attendee-status--${a.responseStatus}`}>
-                    {a.responseStatus === "accepted" ? "✓"
-                      : a.responseStatus === "declined" ? "✗"
-                        : a.responseStatus === "tentative" ? "?"
-                          : "–"}
-                  </span>
-                </div>
-              ))}
+        {/* Guests (edit mode only) */}
+        {props.mode === "edit" && attendees.length > 0 && (
+          <>
+            <div className="gcal-modal-divider" />
+            <div className="gcal-guests-section">
+              <span className="gcal-guests-count">
+                {attendees.length} guest{attendees.length !== 1 ? "s" : ""}
+              </span>
+              <div className="gcal-attendee-list">
+                {visibleAttendees.map(a => (
+                  <div key={a.email} className="gcal-attendee-row">
+                    <div
+                      className="gcal-attendee-avatar"
+                      style={{ background: getAvatarColor(a.email) }}
+                    >
+                      {a.email.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="gcal-attendee-email">{a.email}</span>
+                    <span className={`gcal-attendee-status gcal-attendee-status--${a.responseStatus}`}>
+                      {a.responseStatus === "accepted" ? "✓"
+                        : a.responseStatus === "declined" ? "✗"
+                          : a.responseStatus === "tentative" ? "?"
+                            : "–"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {attendees.length > GUEST_PREVIEW_COUNT && (
+                <button
+                  className="gcal-see-all-btn"
+                  onClick={() => setShowAllGuests(v => !v)}
+                >
+                  {showAllGuests ? "Show less" : `See all ${attendees.length} guests`}
+                </button>
+              )}
             </div>
-          </div>
+          </>
         )}
+
+        {/* Going? (edit mode) */}
+        {props.mode === "edit" && (
+          <>
+            <div className="gcal-modal-divider" />
+            <div className="gcal-response-row">
+              <span className="gcal-response-label">Going?</span>
+              <div className="gcal-response-buttons">
+                {(["accepted", "tentative", "declined"] as const).map(status => (
+                  <button
+                    key={status}
+                    className={`gcal-btn-response gcal-btn-response--${status}${(props as EditProps).event.selfResponseStatus === status
+                      ? " gcal-btn-response--active"
+                      : ""
+                      }`}
+                    onClick={() => (props as EditProps).onRespond?.(status)}
+                  >
+                    {status === "accepted" ? "Yes" : status === "tentative" ? "Maybe" : "No"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Recurrence (create mode) */}
         {props.mode === "create" && (
           <>
+            <div className="gcal-modal-divider" />
             <label className="gcal-checkbox-label">
               <input
                 type="checkbox"
                 checked={repeat}
-                onChange={(e) => setRepeat(e.target.checked)}
+                onChange={e => setRepeat(e.target.checked)}
               />
               Repeat
             </label>
@@ -284,7 +377,7 @@ export default function EventModal(props: Props) {
                   Frequency
                   <select
                     value={frequency}
-                    onChange={(e) => {
+                    onChange={e => {
                       const freq = e.target.value as RRuleFrequency;
                       setFrequency(freq);
                       if (freq === "WEEKLY" && days.length === 0) {
@@ -306,7 +399,7 @@ export default function EventModal(props: Props) {
                     type="number"
                     min={1}
                     value={interval}
-                    onChange={(e) => setInterval(Math.max(1, parseInt(e.target.value) || 1))}
+                    onChange={e => setIntervalVal(Math.max(1, parseInt(e.target.value) || 1))}
                     className="gcal-input"
                   />
                 </label>
@@ -329,7 +422,7 @@ export default function EventModal(props: Props) {
                   Ends
                   <select
                     value={endType}
-                    onChange={(e) => setEndType(e.target.value as "never" | "until" | "count")}
+                    onChange={e => setEndType(e.target.value as "never" | "until" | "count")}
                     className="gcal-input"
                   >
                     <option value="never">Never</option>
@@ -344,7 +437,7 @@ export default function EventModal(props: Props) {
                     <input
                       type="date"
                       value={untilDate}
-                      onChange={(e) => setUntilDate(e.target.value)}
+                      onChange={e => setUntilDate(e.target.value)}
                       className="gcal-input"
                     />
                   </label>
@@ -357,7 +450,7 @@ export default function EventModal(props: Props) {
                       type="number"
                       min={1}
                       value={countNum}
-                      onChange={(e) => setCountNum(Math.max(1, parseInt(e.target.value) || 1))}
+                      onChange={e => setCountNum(Math.max(1, parseInt(e.target.value) || 1))}
                       className="gcal-input"
                     />
                   </label>
@@ -367,23 +460,7 @@ export default function EventModal(props: Props) {
           </>
         )}
 
-        {props.mode === "edit" && (
-          <div className="gcal-response-row">
-            <span className="gcal-field-label">Going?</span>
-            <div className="gcal-response-buttons">
-              {(["accepted", "tentative", "declined"] as const).map((status) => (
-                <button
-                  key={status}
-                  className={`gcal-btn-response gcal-btn-response--${status}${(props as EditProps).event.selfResponseStatus === status ? " gcal-btn-response--active" : ""}`}
-                  onClick={() => (props as EditProps).onRespond?.(status)}
-                >
-                  {status === "accepted" ? "Yes" : status === "tentative" ? "Maybe" : "No"}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
+        {/* Footer */}
         <div className="gcal-modal-footer">
           {!isCreate && (
             <button className="gcal-btn-danger" onClick={(props as EditProps).onDelete}>
