@@ -107,6 +107,7 @@ obsidian-gcal/
 │   └── utils/
 │       ├── dedup.ts              ← Event deduplication by iCalUID ✓ DONE
 │       └── rrule.ts              ← RRULE builder — buildRRule(options) → string ✓ DONE
+│       └── color.ts              ← desaturateHex() — reduces color saturation for event chips
 ├── styles.css
 ├── manifest.json
 ├── package.json
@@ -652,13 +653,19 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
   - [x] Calendar density toggle — compact (default) / medium / large, persisted to `plugin.data.viewDensity`
 
   6.3 Events
-  - [ ] Events that need action should have hash lines background (like Excalidraw), not solid background
-  - [ ] Click video call link to launch URL in browser
-  - [ ] Update `EventModal.tsx` with full event capabilities: title, date, start, end, recurring, all day, add guest, location, description, what calendar to add to
+  - [x] needsAction events render with crosshatch background (CSS repeating-linear-gradient via eventClassNames)
+  - [x] All inline styles moved from CalendarPanel.tsx to styles.css (gcal-panel-* classes)
+  - [x] Event chip border set to rgba(0,0,0,0.4)
+  - [x] Event chip colors desaturated via desaturateHex() in utils/color.ts (amount: 0.2)
+  - [x] Update `EventModal.tsx` with full event capabilities: title, date, start, end, recurring, all day, add guest, location, description, what calendar to add to
+  - [x] Click video call link to launch URL in browser
+  - [ ] Show attending guests, name and response status. 
+  - [ ] Styling the modal for better UI
   - [ ] Drag to create start time and end time for new events
   - [ ] Invite others to events, when creating and editing events
 
   6.4 Calendar Navigation
+  - [ ] Add horizontal line on current time across calendar
   - [ ] Mini month navigation widget - highlighting today, and slightly lower opacity for previous days
   - [ ] View toggle (Day / 3D / Week) using FullCalendar API
   - [ ] `T` button at the top left to jump to Today/This Week
@@ -767,6 +774,10 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | Week view fetch window | Snap to Monday using `(dayOfWeek + 6) % 7` | Without snap, events from days before selectedDate are outside timeMin and never fetched |
 | FC resize responsiveness | ResizeObserver on wrapper div + 50ms delay before updateSize() | FC measures width on mount only; observer fires on panel drag; delay lets DOM settle before measurement |
 | Calendar density | CSS class on wrapper div + slotDuration/slotLabelInterval props | Slot height is not a FC prop — CSS is the only way. Persisted to plugin.data.viewDensity. |
+| needsAction visual | CSS crosshatch via `background-image` + `!important` | FC sets `background` as inline style — `background-image` layers on top without overriding the base color |
+| Event border | `rgba(0,0,0,0.4)` | Fully opaque black is too harsh against coloured chips |
+| Event color saturation | `desaturateHex()` at `0.2` in `utils/color.ts` | Google calendar colors at full saturation are too bright; 0.2 takes the edge off without washing out calendar distinction |
+| Saturation helper location | `utils/color.ts` | Keeps CalendarPanel clean; color transforms are reusable utility logic |
 
 ---
 
@@ -784,24 +795,9 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 
 ### Immediate Next Steps
 
-Start Phase 6.3 in a new thread. Paste this plan doc at the top.
+Phase 6: IN PROGRESS (6.1 done, 6.2 done, 6.3 in progress)
 
-6.3 Events
-  - [ ] Events that need action should have hash lines background (like Excalidraw), not solid background
-  - [ ] Click video call link to launch URL in browser
-  - [ ] Update `EventModal.tsx` with full event capabilities: title, date, start, end, recurring, all day, add guest, location, description, what calendar to add to
-  - [ ] Drag to create start time and end time for new events
-  - [ ] Invite others to events, when creating and editing events
-
-6.4 Calendar Navigation
-  - [ ] Mini month navigation widget - highlighting today, and slightly lower opacity for previous days
-  - [ ] View toggle (Day / 3D / Week) using FullCalendar API
-  - [ ] `T` button at the top left to jump to Today/This Week
-  - [ ] Left and right buttons at the top left to navigate between days/weeks
-
-6.5 Misc
-  - [ ] Add main timezone picker
-  - [ ] More visible loading states messages, success messages, error messages on the UI
+Next: Task 7 of 6.3 - Show attending guests, name and response status. 
 
 ### Deferred Optimisations (do not start until core functionality complete)
 - **Targeted single-calendar refetch** — instead of full `fetchAllRef` after a write, only refetch events for the specific `calendarId` that changed. Cuts N requests down to 1-2. Reduces flash. Requires pulling `getEvents` into a standalone function that merges results back into `state.events` by `calendarId`.
