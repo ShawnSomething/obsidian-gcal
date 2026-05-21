@@ -162,6 +162,7 @@ interface PluginData {
   calendarVisibility: Record<string, boolean>;
   clientId: string;
   clientSecret: string;
+  viewDensity: ViewDensity;  // "compact" | "medium" | "large"
 }
 
 interface AccountConfig {
@@ -281,6 +282,21 @@ backgroundColor: (calendars.find(c => c.id === e.calendarId)?.backgroundColor ??
 
 **Declined event filter** — `fcEvents` useMemo filters out events where `selfResponseStatus === "declined"`. Done client-side, no refetch needed.
 
+**View window fetch range:**
+- `day`: start of selectedDate → +1 day
+- `3day`: start of selectedDate → +3 days
+- `week`: Monday of selectedDate's week → +7 days
+
+**Week view snap to Monday:**
+```typescript
+if (view === "week") {
+  const dayOfWeek = start.getDay();
+  const daysFromMonday = (dayOfWeek + 6) % 7; // Sun→6, Mon→0, Tue→1, etc.
+  start.setDate(start.getDate() - daysFromMonday);
+}
+```
+`(dayOfWeek + 6) % 7` handles Sunday (0) correctly — without it Sunday gives -1.
+
 ### 5.7 Write Operations
 
 **Drag-to-move:** `PATCH` with `sendUpdates=none`. Call `revert()` on error.
@@ -337,6 +353,41 @@ views={{ threeDays: { type: "timeGrid", duration: { days: 3 } } }}
 **First day of week:** `firstDay={1}` (Monday)
 
 **Locale:** `locale={enAU}` — import from `@fullcalendar/core/locales/en-au`. Gives DD/MM date format.
+
+**Responsive width — ResizeObserver pattern:**
+FullCalendar calculates its width on mount and does not listen for container resizes. Wire a `ResizeObserver` to the wrapper div and call `updateSize()` with a 50ms delay (gives DOM time to settle before FC measures):
+```typescript
+const calendarWrapperRef = useRef<HTMLDivElement>(null);
+
+useEffect(() => {
+  const el = calendarWrapperRef.current;
+  if (!el) return;
+  const observer = new ResizeObserver(() => {
+    setTimeout(() => {
+      calendarRef.current?.getApi().updateSize();
+    }, 50);
+  });
+  observer.observe(el);
+  return () => observer.disconnect();
+}, []);
+```
+Attach `ref={calendarWrapperRef}` to the wrapper div. Do NOT observe `calendarRef.current.el` — that type doesn't expose `el`.
+
+**Calendar density — slot height via CSS class:**
+Three density modes controlled by a class on the wrapper div + CSS in `styles.css`:
+```tsx
+<div ref={calendarWrapperRef} className={`gcal-density-${density}`} style={{ flex: 1, overflow: "hidden" }}>
+  <FullCalendar
+    slotDuration={density === "large" ? "00:15:00" : "00:30:00"}
+    slotLabelInterval={density === "large" ? "00:30:00" : "01:00:00"}
+    ...
+```
+CSS:
+```css
+.gcal-density-medium .fc-timegrid-slot { height: 40px; }
+.gcal-density-large .fc-timegrid-slot { height: 40px; }
+```
+Density state initialised from `plugin.data.viewDensity`, persisted on change via `useEffect`. Toggle button in header cycles compact → medium → large → compact, showing S/M/L label.
 
 ### 5.10 RRULE Builder (`utils/rrule.ts`)
 
@@ -457,6 +508,23 @@ return { ...cal, visible: persisted !== undefined ? persisted : cal.visible };
 
 **Why save in CalendarPanel, not CalendarToggle:** CalendarToggle is a presentational component — it should only dispatch actions, not own side effects. CalendarPanel owns all side effects (fetching, writing, error handling). Saving visibility belongs there too. Passing `plugin` into CalendarToggle would couple a display component to the entire plugin god-object.
 
+### 5.13 View Density
+
+Three density modes persisted to `plugin.data.viewDensity`:
+
+| Mode | Slot duration | Slot label interval | Row height |
+|---|---|---|---|
+| compact | 30min | 1hr | default (FC default) |
+| medium | 30min | 1hr | 40px via CSS |
+| large | 15min | 30min | 40px via CSS |
+
+- `ViewDensity = "compact" | "medium" | "large"` exported from `types.ts`
+- Default in `TokenStore.defaultData()`: `viewDensity: "compact"`
+- State in `CalendarPanel`: `useState<ViewDensity>(plugin.data.viewDensity ?? "compact")`
+- Persisted via `useEffect` watching `density`
+- Toggle button in header (after CalendarToggle) cycles S → M → L → S
+- CSS targets `.gcal-density-{mode} .fc-timegrid-slot` for row height
+
 ---
 
 ## 6. Obsidian-Specific Patterns
@@ -574,35 +642,35 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - [x] `patchAttendeeResponse` widened to accept `"tentative"` — all three response statuses supported
 
 ### Phase 6 — UI Polish
-  6.1 Calendar Toggle
-  - [x] Open in browser button — `↗` button next to account email in CalendarToggle dropdown. Uses `https://accounts.google.com/AccountChooser?Email=${email}&continue=https%3A%2F%2Fcalendar.google.com` to select correct account in browser.
-  - [x] Remember which calendars were turned off — persisted via `plugin.data.calendarVisibility`. Saved in `useEffect` watching `state.calendars` in CalendarPanel. Read back in fetchAllRef merge logic on reload.
+  6.1 Calendar Toggle ✅ DONE
+  - [x] Open in browser button — `↗` button next to account email in CalendarToggle dropdown
+  - [x] Remember which calendars were turned off — persisted via `plugin.data.calendarVisibility`
 
-  6.2 Calendar View
-  - [ ] Show events from all days in the current view. Currently, events from previous days in the week no longer show
-  - [ ] Calendar width to scale responsively with panel size
-  - [ ] Calendar grid options, "compact" for current view. "medium" for 30min increments taking up two cells. And "large" to show 15 minute increments take up two cells.
+  6.2 Calendar View ✅ DONE
+  - [x] Show events from all days in the current view — fixed `getViewWindow` to snap to Monday for week view
+  - [x] Calendar width scales responsively with panel size — ResizeObserver on wrapper div, 50ms delay before `updateSize()`
+  - [x] Calendar density toggle — compact (default) / medium / large, persisted to `plugin.data.viewDensity`
 
   6.3 Events
-  - [ ] events that need action should have a hash lines background like excalidraw, not solid background
-  - [ ] Click video call link to launch url in browser
+  - [ ] Events that need action should have hash lines background (like Excalidraw), not solid background
+  - [ ] Click video call link to launch URL in browser
   - [ ] Update `EventModal.tsx` with full event capabilities: title, date, start, end, recurring, all day, add guest, location, description, what calendar to add to
   - [ ] Drag to create start time and end time for new events
   - [ ] Invite others to events, when creating and editing events
-  
+
   6.4 Calendar Navigation
   - [ ] Mini month navigation widget - highlighting today, and slightly lower opacity for previous days
   - [ ] View toggle (Day / 3D / Week) using FullCalendar API
   - [ ] `T` button at the top left to jump to Today/This Week
   - [ ] Left and right buttons at the top left to navigate between days/weeks
 
-  6.5 Misc  
+  6.5 Misc
   - [ ] Add main timezone picker
   - [ ] More visible loading states messages, success messages, error messages on the UI
 
 
 ### Phase 7 — Publish Prep
-- [ ] Polish event updating, creating, and deleting speeds 
+- [ ] Polish event updating, creating, and deleting speeds
 - [ ] Error handling + user-facing messages for all failure cases
 - [ ] Easier authentication method for multiple accounts, do not require GCP setup
 - [ ] README with GCP setup guide
@@ -637,6 +705,8 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | TypeScript discriminated union narrowing | `props.mode === "x"` is the only safe narrowing pattern — derived booleans (`isCreate`) and `as` casts do NOT narrow |
 | RecurringModal choice type widening | When adding new choice values (e.g. `"all"`), update the type in RecurringModalProps, askRecurring signature, EditProps.askRecurring, and CalendarPanel state — all four must stay in sync |
 | Calendar visibility on reload | `state.calendars` is `[]` on init — merge logic must fall back to `plugin.data.calendarVisibility` before defaulting to API value. Guard `length === 0` in save effect prevents wiping record before data loads. |
+| FullCalendar width on panel resize | FC doesn't listen for container resizes — use ResizeObserver + 50ms setTimeout before calling `updateSize()`. Do NOT use `calendarRef.current.el` — type doesn't expose it. Observe the wrapper div via a separate `calendarWrapperRef` instead. |
+| FC slot height | Controlled via CSS on `.fc-timegrid-slot`, not a FC prop. Apply density class to wrapper div and target via `.gcal-density-{mode} .fc-timegrid-slot`. |
 
 ---
 
@@ -694,6 +764,9 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | Attendee response — full array required | Send all attendees, update only self entry | Google drops unlisted attendees if you send a partial array |
 | Calendar visibility persistence | useEffect in CalendarPanel watching state.calendars | CalendarToggle is presentational — side effects belong in CalendarPanel. Guard length === 0 prevents wiping on init. |
 | Open in browser URL | AccountChooser URL with email param | `/u/0` index unknown at runtime — AccountChooser selects correct account by email |
+| Week view fetch window | Snap to Monday using `(dayOfWeek + 6) % 7` | Without snap, events from days before selectedDate are outside timeMin and never fetched |
+| FC resize responsiveness | ResizeObserver on wrapper div + 50ms delay before updateSize() | FC measures width on mount only; observer fires on panel drag; delay lets DOM settle before measurement |
+| Calendar density | CSS class on wrapper div + slotDuration/slotLabelInterval props | Slot height is not a FC prop — CSS is the only way. Persisted to plugin.data.viewDensity. |
 
 ---
 
@@ -707,16 +780,28 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - Phase 3: DONE
 - Phase 4: DONE
 - Phase 5: DONE
-- Phase 6: IN PROGRESS (6.1 done)
+- Phase 6: IN PROGRESS (6.1 done, 6.2 done)
 
 ### Immediate Next Steps
 
-Start Phase 6.2 in a new thread. Paste this plan doc at the top.
+Start Phase 6.3 in a new thread. Paste this plan doc at the top.
 
-6.2 Calendar View
-  - [ ] Show events from all days in the current view. Currently, events from previous days in the week no longer show
-  - [ ] Calendar width to scale responsively with panel size
-  - [ ] Calendar grid options, "compact" for current view. "medium" for 30min increments taking up two cells. And "large" to show 15 minute increments take up two cells.
+6.3 Events
+  - [ ] Events that need action should have hash lines background (like Excalidraw), not solid background
+  - [ ] Click video call link to launch URL in browser
+  - [ ] Update `EventModal.tsx` with full event capabilities: title, date, start, end, recurring, all day, add guest, location, description, what calendar to add to
+  - [ ] Drag to create start time and end time for new events
+  - [ ] Invite others to events, when creating and editing events
+
+6.4 Calendar Navigation
+  - [ ] Mini month navigation widget - highlighting today, and slightly lower opacity for previous days
+  - [ ] View toggle (Day / 3D / Week) using FullCalendar API
+  - [ ] `T` button at the top left to jump to Today/This Week
+  - [ ] Left and right buttons at the top left to navigate between days/weeks
+
+6.5 Misc
+  - [ ] Add main timezone picker
+  - [ ] More visible loading states messages, success messages, error messages on the UI
 
 ### Deferred Optimisations (do not start until core functionality complete)
 - **Targeted single-calendar refetch** — instead of full `fetchAllRef` after a write, only refetch events for the specific `calendarId` that changed. Cuts N requests down to 1-2. Reduces flash. Requires pulling `getEvents` into a standalone function that merges results back into `state.events` by `calendarId`.
