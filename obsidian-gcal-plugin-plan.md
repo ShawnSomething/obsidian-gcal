@@ -28,6 +28,9 @@ Read the exact error message and line number before doing anything.
 Fix only what the error points to. Do not rewrite surrounding code.
 If the fix is one line, write one line.
 
+### Scope discipline
+Only change what the task requires. Do not touch surrounding code, outer divs, or class names that are not part of the feature being built. A mistake was made changing `gcal-panel-container` to `gcal-panel-header` on the root return div while adding MiniMonth — this broke the entire layout. Never touch the outer container when adding something inside a child.
+
 ---
 
 ## 3. Features (Priority Order)
@@ -93,7 +96,7 @@ obsidian-gcal/
 │   ├── components/
 │   │   ├── CalendarPanel.tsx     ← FullCalendar config + fetch logic + header ✓ DONE
 │   │   ├── CalendarToggle.tsx    ← Show/hide individual calendars, grouped by account ✓ DONE
-│   │   ├── MiniMonth.tsx         ← Mini month navigation widget
+│   │   ├── MiniMonth.tsx         ← Mini month navigation widget ✓ DONE
 │   │   ├── EventModal.tsx        ← Edit + Create modal (discriminated union Props) ✓ DONE
 │   │   └── RecurringModal.tsx    ← "This / This & Following / All events" choice ✓ DONE
 │   ├── settings/
@@ -355,6 +358,8 @@ views={{ threeDays: { type: "timeGrid", duration: { days: 3 } } }}
 
 **Locale:** `locale={enAU}` — import from `@fullcalendar/core/locales/en-au`. Gives DD/MM date format.
 
+**Now indicator:** `nowIndicator={true}` — renders a red horizontal line + time label at the current time. Built-in FC prop, no extra code needed.
+
 **Responsive width — ResizeObserver pattern:**
 FullCalendar calculates its width on mount and does not listen for container resizes. Wire a `ResizeObserver` to the wrapper div and call `updateSize()` with a 50ms delay (gives DOM time to settle before FC measures):
 ```typescript
@@ -574,6 +579,53 @@ Modal is centred, options have generous vertical padding, cancel button centred.
 .gcal-modal-cancel { padding: 7px 24px; }
 ```
 
+### 5.15 MiniMonth Component
+
+**File:** `src/components/MiniMonth.tsx`
+
+Popover-based date picker. Trigger button sits top-left of header showing current month/year (e.g. "May 2026"). Clicking opens a popover grid. Clicking a date dispatches `SET_DATE` and calls `calendarRef.current?.getApi().gotoDate(date)` — both required (context drives fetch, FC API moves the visual).
+
+**Props:**
+```typescript
+interface Props {
+  selectedDate: Date;
+  onDateSelect: (date: Date) => void;
+}
+```
+
+**Key implementation details:**
+- `viewDate` state tracks which month the popover is showing — initialised from `selectedDate`, synced via `useEffect` when `selectedDate` changes
+- Week starts Monday — offset calculated via `(dayOfWeek + 6) % 7`
+- Outside click closes popover via `mousedown` listener on `document`, cleaned up on close
+- Day cells: `width: 28px; height: 28px` — do NOT use `aspect-ratio: 1`, it is unreliable in Electron/Obsidian
+- Past days rendered at `opacity: 0.4`
+- Today rendered with accent color + bold
+- Selected date rendered with accent background
+
+**CalendarPanel wiring:**
+```typescript
+const handleDateSelect = (date: Date) => {
+  dispatch({ type: "SET_DATE", payload: date });
+  calendarRef.current?.getApi().gotoDate(date);
+};
+```
+
+**Header layout:**
+```tsx
+<div className="gcal-panel-header">
+  <MiniMonth selectedDate={state.selectedDate} onDateSelect={handleDateSelect} />
+  <div className="gcal-panel-header-left">
+    <button>↻</button>
+    <CalendarToggle />
+    <button>{density}</button>
+  </div>
+</div>
+```
+
+`gcal-panel-header` uses `justify-content: space-between` — MiniMonth left, buttons right.
+
+**Popover width:** `240px` — 220px clips the Sunday column. Do not go narrower.
+
 ---
 
 ## 6. Obsidian-Specific Patterns
@@ -712,9 +764,9 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
   - [x] Styling the recurring modal for better UI — centred layout, 22px vertical padding on option buttons, centred cancel
   - [x] Drag to create — `select` callback replaces `dateClick`, 800ms delay before refetch for Google API propagation
 
-  6.4 Calendar Navigation
-  - [ ] Add horizontal line on current time across calendar
-  - [ ] Mini month navigation widget - highlighting today, and slightly lower opacity for previous days
+  6.4 Calendar Navigation — IN PROGRESS
+  - [x] Add horizontal line on current time across calendar — `nowIndicator={true}` on FullCalendar, one prop, done
+  - [x] Mini month navigation widget — `MiniMonth.tsx` popover, trigger top-left, dispatches SET_DATE + gotoDate
   - [ ] View toggle (Day / 3D / Week) using FullCalendar API
   - [ ] `T` button at the top left to jump to Today/This Week
   - [ ] Left and right buttons at the top left to navigate between days/weeks
@@ -764,6 +816,9 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | FC slot height | Controlled via CSS on `.fc-timegrid-slot`, not a FC prop. Apply density class to wrapper div and target via `.gcal-density-{mode} .fc-timegrid-slot`. |
 | FC drag-to-create ghost persisting | Do NOT use `selectMirror={true}` — it renders a ghost on first interaction that never clears. Use `selectable={true}` only, and call `calendarRef.current?.getApi().unselect()` at top of `select` callback. |
 | Google POST propagation delay | After `postEvent`, add 800ms delay before refetch — Google returns 200 but event is not immediately available on GET. |
+| MiniMonth day cell sizing | Do NOT use `aspect-ratio: 1` on day cells — unreliable in Electron/Obsidian. Use explicit `width: 28px; height: 28px` instead. |
+| MiniMonth popover width | Must be at least 240px — 220px clips the Sunday column due to 7 × 28px cells + gaps. |
+| Editing outer container class | Never change the root return div's className when adding a child feature. Changing `gcal-panel-container` to `gcal-panel-header` broke the entire layout. Only touch what the task requires. |
 
 ---
 
@@ -834,6 +889,12 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | selectMirror | Do NOT use | Renders a ghost on first FC interaction that never clears — FC acquires focus on first interaction and `select` doesn't fire, so nothing calls `unselect()` |
 | FC selection clearing | `calendarRef.current?.getApi().unselect()` at top of `select` callback | FC does not auto-clear selection when the callback fires |
 | Google POST propagation delay | 800ms setTimeout before refetch | Google returns 200 on POST but event is not immediately available on GET — immediate refetch returns stale list |
+| Now indicator | `nowIndicator={true}` on FullCalendar | Built-in FC prop — renders red line + time label at current time. One prop, no extra code. |
+| MiniMonth trigger placement | Top-left of header | Matches Google Calendar / Akiflow convention — date context on the left, actions on the right |
+| MiniMonth popover | Popover on click, not always-visible | Always-visible takes too much vertical space in a sidebar panel |
+| MiniMonth date select | Dispatch SET_DATE + calendarRef.getApi().gotoDate() | Both needed — context drives fetch window, FC API moves the visual |
+| MiniMonth day cell sizing | Explicit width/height (28px) not aspect-ratio | aspect-ratio unreliable in Electron/Obsidian |
+| MiniMonth popover width | 240px | 220px clips Sunday column |
 
 ---
 
@@ -847,16 +908,14 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - Phase 3: DONE
 - Phase 4: DONE
 - Phase 5: DONE
-- Phase 6: IN PROGRESS (6.1 done, 6.2 done, 6.3 done)
+- Phase 6: IN PROGRESS (6.1 done, 6.2 done, 6.3 done, 6.4 partially done)
 
 ### Immediate Next Steps
 
-Phase 6.4 (not started):
-- [ ] Add horizontal line on current time across calendar
-- [ ] Mini month navigation widget
-- [ ] View toggle (Day / 3D / Week)
-- [ ] Today (`T`) button
-- [ ] Left/right navigation buttons
+Phase 6.4 (in progress):
+- [ ] View toggle (Day / 3D / Week) using FullCalendar API
+- [ ] `T` button to jump to Today/This Week
+- [ ] Left/right navigation buttons to move to the next day/week
 
 Phase 6.5 (not started):
 - [ ] Main timezone picker
