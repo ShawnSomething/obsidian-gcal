@@ -751,3 +751,27 @@
 .gcal-minimonth-day--past {
   opacity: 0.4;
 }
+
+/* ─── View toggle ────────────────────────────────────────────── */
+
+.gcal-panel-btn-view {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.gcal-panel-btn-view--active {
+  color: var(--text-normal);
+  border-color: var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+
+/* ─── Hide today highlight in day view only ──────────────────── */
+
+.fc-timeGridDay-view .fc-day-today {
+  background: transparent !important;
+}

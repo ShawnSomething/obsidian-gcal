@@ -206,6 +206,18 @@ export default function CalendarPanel({ plugin }: Props) {
           >
             {density === "compact" ? "S" : density === "medium" ? "M" : "L"}
           </button>
+          {(["day", "3day", "week"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => {
+                dispatch({ type: "SET_VIEW", payload: v });
+                calendarRef.current?.getApi().changeView(VIEW_MAP[v]);
+              }}
+              className={`gcal-panel-btn-view${state.activeView === v ? " gcal-panel-btn-view--active" : ""}`}
+            >
+              {v === "day" ? "D" : v === "3day" ? "3D" : "W"}
+            </button>
+          ))}
         </div>
       </div>
 
