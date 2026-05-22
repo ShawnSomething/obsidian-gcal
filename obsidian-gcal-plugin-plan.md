@@ -390,6 +390,33 @@ CSS:
 ```
 Density state initialised from `plugin.data.viewDensity`, persisted on change via `useEffect`. Toggle button in header cycles compact → medium → large → compact, showing S/M/L label.
 
+**Drag-to-create — `select` callback:**
+Use `selectable={true}` + `select` callback. Do NOT use `dateClick` — `select` handles both single click and click-drag, replacing `dateClick` entirely.
+Do NOT use `selectMirror={true}` — it renders a persistent ghost on the first interaction that never clears.
+Call `calendarRef.current?.getApi().unselect()` at the top of the `select` callback to clear FC's selection state immediately.
+`select` provides `startStr` and `endStr` directly as ISO strings — no manual `+1hr` calculation needed. On single click, FC sets end = start + 30min by default.
+
+```tsx
+selectable={true}
+select={(info) => {
+  calendarRef.current?.getApi().unselect();
+  setCreatingEvent({
+    start: info.startStr,
+    end: info.endStr,
+    allDay: info.allDay,
+  });
+}}
+```
+
+**Google API propagation delay on POST:**
+After `postEvent`, Google returns 200 but the event is not immediately available on GET. Add an 800ms delay before refetching:
+```typescript
+await plugin.api.postEvent(...);
+setCreatingEvent(null);
+await new Promise(res => setTimeout(res, 800));
+await fetchAllRef.current?.();
+```
+
 ### 5.10 RRULE Builder (`utils/rrule.ts`)
 
 Pure function, no side effects, no imports. Used only in EventModal create mode.
@@ -673,7 +700,7 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
   - [x] Calendar width scales responsively with panel size — ResizeObserver on wrapper div, 50ms delay before `updateSize()`
   - [x] Calendar density toggle — compact (default) / medium / large, persisted to `plugin.data.viewDensity`
 
-  6.3 Events
+  6.3 Events ✅ DONE
   - [x] needsAction events render with crosshatch background (CSS repeating-linear-gradient via eventClassNames)
   - [x] All inline styles moved from CalendarPanel.tsx to styles.css (gcal-panel-* classes)
   - [x] Event chip border set to rgba(0,0,0,0.4)
@@ -683,7 +710,7 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
   - [x] Show attending guests, name and response status
   - [x] Styling the Event modal for better UI
   - [x] Styling the recurring modal for better UI — centred layout, 22px vertical padding on option buttons, centred cancel
-  - [ ] Drag to create start time and end time for new events
+  - [x] Drag to create — `select` callback replaces `dateClick`, 800ms delay before refetch for Google API propagation
 
   6.4 Calendar Navigation
   - [ ] Add horizontal line on current time across calendar
@@ -735,6 +762,8 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | Calendar visibility on reload | `state.calendars` is `[]` on init — merge logic must fall back to `plugin.data.calendarVisibility` before defaulting to API value. Guard `length === 0` in save effect prevents wiping record before data loads. |
 | FullCalendar width on panel resize | FC doesn't listen for container resizes — use ResizeObserver + 50ms setTimeout before calling `updateSize()`. Do NOT use `calendarRef.current.el` — type doesn't expose it. Observe the wrapper div via a separate `calendarWrapperRef` instead. |
 | FC slot height | Controlled via CSS on `.fc-timegrid-slot`, not a FC prop. Apply density class to wrapper div and target via `.gcal-density-{mode} .fc-timegrid-slot`. |
+| FC drag-to-create ghost persisting | Do NOT use `selectMirror={true}` — it renders a ghost on first interaction that never clears. Use `selectable={true}` only, and call `calendarRef.current?.getApi().unselect()` at top of `select` callback. |
+| Google POST propagation delay | After `postEvent`, add 800ms delay before refetch — Google returns 200 but event is not immediately available on GET. |
 
 ---
 
@@ -801,6 +830,10 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | Saturation helper location | `utils/color.ts` | Keeps CalendarPanel clean; color transforms are reusable utility logic |
 | RecurringModal layout | Centred text + centred footer | Matches the visual weight of a dialog — option buttons read as choices, not left-aligned list items |
 | RecurringModal option padding | 22px vertical | 12px was too cramped; 22px gives each option enough breathing room to feel tappable |
+| Drag-to-create callback | `select` replaces `dateClick` entirely | `select` handles both click and drag in one callback; `dateClick` only fires on single click |
+| selectMirror | Do NOT use | Renders a ghost on first FC interaction that never clears — FC acquires focus on first interaction and `select` doesn't fire, so nothing calls `unselect()` |
+| FC selection clearing | `calendarRef.current?.getApi().unselect()` at top of `select` callback | FC does not auto-clear selection when the callback fires |
+| Google POST propagation delay | 800ms setTimeout before refetch | Google returns 200 on POST but event is not immediately available on GET — immediate refetch returns stale list |
 
 ---
 
@@ -814,12 +847,9 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - Phase 3: DONE
 - Phase 4: DONE
 - Phase 5: DONE
-- Phase 6: IN PROGRESS (6.1 done, 6.2 done, 6.3 in progress)
+- Phase 6: IN PROGRESS (6.1 done, 6.2 done, 6.3 done)
 
 ### Immediate Next Steps
-
-Phase 6.3 remaining:
-- [ ] Drag to create start time and end time for new events
 
 Phase 6.4 (not started):
 - [ ] Add horizontal line on current time across calendar
