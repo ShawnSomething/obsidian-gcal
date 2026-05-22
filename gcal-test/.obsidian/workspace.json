@@ -4,11 +4,11 @@
     "type": "split",
     "children": [
       {
-        "id": "fcd548591bafbf44",
+        "id": "2d6ff6ba2772c4af",
         "type": "tabs",
         "children": [
           {
-            "id": "3e8a90ee5cfd4e41",
+            "id": "15c8d250579361da",
             "type": "leaf",
             "state": {
               "type": "empty",
@@ -176,7 +176,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 822.5
+    "width": 845.5
   },
   "left-ribbon": {
     "hiddenItems": {
@@ -190,7 +190,7 @@
       "sample-plugin:Google Calendar": false
     }
   },
-  "active": "3e8a90ee5cfd4e41",
+  "active": "e00a06e4c4f58e77",
   "lastOpenFiles": [
     "Welcome.md",
     "Untitled.base"
