@@ -197,6 +197,28 @@ export default function CalendarPanel({ plugin }: Props) {
           >
             T
           </button>
+          <button
+            onClick={() => {
+              calendarRef.current?.getApi().prev();
+              const newDate = calendarRef.current?.getApi().getDate();
+              if (newDate) dispatch({ type: "SET_DATE", payload: newDate });
+            }}
+            className="gcal-panel-btn-icon"
+            title="Previous"
+          >
+            ‹
+          </button>
+          <button
+            onClick={() => {
+              calendarRef.current?.getApi().next();
+              const newDate = calendarRef.current?.getApi().getDate();
+              if (newDate) dispatch({ type: "SET_DATE", payload: newDate });
+            }}
+            className="gcal-panel-btn-icon"
+            title="Next"
+          >
+            ›
+          </button>
         </div>
         <div className="gcal-panel-header-left">
           <button
