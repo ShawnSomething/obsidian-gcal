@@ -184,7 +184,20 @@ export default function CalendarPanel({ plugin }: Props) {
   return (
     <div className="gcal-panel-container">
       <div className="gcal-panel-header">
-        <MiniMonth selectedDate={state.selectedDate} onDateSelect={handleDateSelect} />
+        <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+          <MiniMonth selectedDate={state.selectedDate} onDateSelect={handleDateSelect} />
+          <button
+            onClick={() => {
+              const today = new Date();
+              dispatch({ type: "SET_DATE", payload: today });
+              calendarRef.current?.getApi().today();
+            }}
+            className="gcal-panel-btn-icon"
+            title="Go to today"
+          >
+            T
+          </button>
+        </div>
         <div className="gcal-panel-header-left">
           <button
             onClick={() => fetchAllRef.current?.()}
