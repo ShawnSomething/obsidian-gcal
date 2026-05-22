@@ -226,6 +226,7 @@ export default function CalendarPanel({ plugin }: Props) {
           }}
           headerToolbar={false}
           firstDay={1}
+          nowIndicator={true}
           editable={true}
           selectable={true}
           eventClassNames={(arg) => {
