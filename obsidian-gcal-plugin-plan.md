@@ -767,7 +767,7 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
   6.4 Calendar Navigation — IN PROGRESS
   - [x] Add horizontal line on current time across calendar — `nowIndicator={true}` on FullCalendar, one prop, done
   - [x] Mini month navigation widget — `MiniMonth.tsx` popover, trigger top-left, dispatches SET_DATE + gotoDate
-  - [ ] View toggle (Day / 3D / Week) using FullCalendar API
+  - [x] View toggle (Day / 3D / Week) using FullCalendar API
   - [ ] `T` button at the top left to jump to Today/This Week
   - [ ] Left and right buttons at the top left to navigate between days/weeks
 
@@ -913,7 +913,6 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 ### Immediate Next Steps
 
 Phase 6.4 (in progress):
-- [ ] View toggle (Day / 3D / Week) using FullCalendar API
 - [ ] `T` button to jump to Today/This Week
 - [ ] Left/right navigation buttons to move to the next day/week
 
