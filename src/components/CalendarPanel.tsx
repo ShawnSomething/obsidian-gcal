@@ -12,6 +12,7 @@ import { RecurringModal } from "./RecurringModal";
 import enAU from "@fullcalendar/core/locales/en-au";
 import { ViewDensity } from "../api/types";
 import { desaturateHex } from "../utils/color";
+import MiniMonth from "./MiniMonth";
 
 interface Props {
   plugin: GCalPlugin;
@@ -153,6 +154,11 @@ export default function CalendarPanel({ plugin }: Props) {
     plugin.saveData(plugin.data);
   }, [density]);
 
+  const handleDateSelect = (date: Date) => {
+    dispatch({ type: "SET_DATE", payload: date });
+    calendarRef.current?.getApi().gotoDate(date);
+  };
+
   const fcEvents = useMemo(
     () =>
       state.events
@@ -178,26 +184,29 @@ export default function CalendarPanel({ plugin }: Props) {
   return (
     <div className="gcal-panel-container">
       <div className="gcal-panel-header">
-        <button
-          onClick={() => fetchAllRef.current?.()}
-          disabled={state.isLoading}
-          className="gcal-panel-btn-icon"
-          title="Refresh calendars"
-        >
-          ↻
-        </button>
-        <CalendarToggle />
-        <button
-          onClick={() =>
-            setDensity((d) =>
-              d === "compact" ? "medium" : d === "medium" ? "large" : "compact"
-            )
-          }
-          className="gcal-panel-btn-density"
-          title="Calendar density"
-        >
-          {density === "compact" ? "S" : density === "medium" ? "M" : "L"}
-        </button>
+        <MiniMonth selectedDate={state.selectedDate} onDateSelect={handleDateSelect} />
+        <div className="gcal-panel-header-left">
+          <button
+            onClick={() => fetchAllRef.current?.()}
+            disabled={state.isLoading}
+            className="gcal-panel-btn-icon"
+            title="Refresh calendars"
+          >
+            ↻
+          </button>
+          <CalendarToggle />
+          <button
+            onClick={() =>
+              setDensity((d) =>
+                d === "compact" ? "medium" : d === "medium" ? "large" : "compact"
+              )
+            }
+            className="gcal-panel-btn-density"
+            title="Calendar density"
+          >
+            {density === "compact" ? "S" : density === "medium" ? "M" : "L"}
+          </button>
+        </div>
       </div>
 
       {state.error && (
