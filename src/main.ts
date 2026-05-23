@@ -10,7 +10,7 @@ export interface CommandBridge {
 	goToToday: () => void;
 	refresh: () => void;
 	next: () => void;
-  	prev: () => void;
+	prev: () => void;
 }
 
 export default class GCalPlugin extends Plugin {
@@ -44,12 +44,32 @@ export default class GCalPlugin extends Plugin {
 			id: "open-gcal-view",
 			name: "Open Google Calendar",
 			callback: () => {
-				const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE);
-				if (existing.length > 0) {
-					existing[0]!.detach();
+				const rightSplit = this.app.workspace.rightSplit as any;
+				const existing =
+					this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];
+
+				if (!existing) {
+					this.activateView();
 					return;
 				}
-				this.activateView();
+
+				const isCollapsed = rightSplit.collapsed === true;
+
+				if (isCollapsed) {
+					rightSplit.expand();
+					this.app.workspace.revealLeaf(existing);
+					return;
+				}
+
+				const parent = (existing as any).parent;
+				const isActive =
+					parent?.children?.[parent?.currentTab] === existing;
+
+				if (isActive) {
+					rightSplit.collapse();
+				} else {
+					this.app.workspace.revealLeaf(existing);
+				}
 			},
 		});
 
