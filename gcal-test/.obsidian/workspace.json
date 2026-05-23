@@ -162,7 +162,7 @@
             }
           },
           {
-            "id": "e00a06e4c4f58e77",
+            "id": "6bcb07e0d625badd",
             "type": "leaf",
             "state": {
               "type": "gcal-view",
@@ -190,7 +190,7 @@
       "sample-plugin:Google Calendar": false
     }
   },
-  "active": "e00a06e4c4f58e77",
+  "active": "6bcb07e0d625badd",
   "lastOpenFiles": [
     "Welcome.md",
     "Untitled.base"

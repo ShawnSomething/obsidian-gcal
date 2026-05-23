@@ -719,6 +719,30 @@ All timezone handling anchors to device local time — no timezone picker needed
 - If device timezone matches user's intended calendar timezone (the normal case), everything just works
 - When adding `recurrence` to a PUT request, Google requires `timeZone` in `start`/`end` objects. Use `Intl.DateTimeFormat().resolvedOptions().timeZone`.
 
+### 5.18 Keyboard Shortcuts
+
+**Registration:** Use Obsidian's `this.addCommand()` API in `main.ts`. Each command gets an `id`, `name`, and `callback`. Hotkeys are user-configurable in Obsidian's hotkey settings — the plugin only defines the default.
+
+**To open the calendar leaf:**
+```typescript
+this.addCommand({
+  id: "open-gcal-view",
+  name: "Open Google Calendar",
+  callback: () => {
+    this.app.workspace.getRightLeaf(false)?.setViewState({ type: VIEW_TYPE_GCAL });
+    this.app.workspace.revealLeaf(...);
+  }
+});
+```
+
+**Commands to register:**
+- Open calendar leaf
+- Toggle view: Day → 3-day → Week (cycles, dispatches `SET_VIEW` + calls FC `changeView`)
+- Jump to today (dispatches `SET_DATE` + `gotoDate(new Date())`)
+- Refresh (calls `fetchAllRef.current?.()`)
+
+**State bridge:** Commands registered in `main.ts` can't directly call React state. Pattern: expose methods on the plugin class that the React tree wires up via a ref or callback registered on mount. Alternatively, dispatch a custom DOM event from `main.ts` and listen in `CalendarPanel.tsx`.
+
 ---
 
 ## 6. Obsidian-Specific Patterns
@@ -880,27 +904,43 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 ### Phase 7 — Publish Prep
 
   7.1 Performance ✅ DONE
-  - [x] **Grid line opacity** — reduce calendar grid line opacity via CSS
-  - [x] **Optimistic updates** — single-event write ops return `Promise<CalEvent>`, dispatch UPDATE_EVENT/ADD_EVENT/REMOVE_EVENT directly
-  - [x] **Parallel fetches** — confirmed already implemented via `Promise.all`. No change needed.
-  - [x] **Targeted single-calendar refetch** — `fetchCalendarRef` pattern added. `MERGE_EVENTS` action in reducer. Used after splitRecurringSeries, deleteRecurringAndFollowing, and recurring postEvent. Cuts N-calendar refetch to 1.
-  - [x] **Recurring create instances** — `postEvent` with recurrence uses `fetchCalendarRef` instead of `ADD_EVENT` so all instances appear immediately without a manual refresh.
-  - [x] **Add repeat to existing event** — Repeat UI shown in edit mode for non-recurring events. `putEvent` signature extended with `recurrence?: string[]`. Google requires `timeZone` in start/end when recurrence is present — use `Intl.DateTimeFormat().resolvedOptions().timeZone`. CalendarPanel `onSave` branches on `updates.recurrence?.length`: fetchCalendarRef if set, UPDATE_EVENT dispatch if not.
+  - [x] Grid line opacity — reduce calendar grid line opacity via CSS
+  - [x] Optimistic updates — single-event write ops return `Promise<CalEvent>`, dispatch UPDATE_EVENT/ADD_EVENT/REMOVE_EVENT directly
+  - [x] Parallel fetches — confirmed already implemented via `Promise.all`. No change needed.
+  - [x] Targeted single-calendar refetch — `fetchCalendarRef` pattern added. `MERGE_EVENTS` action in reducer. Used after splitRecurringSeries, deleteRecurringAndFollowing, and recurring postEvent. Cuts N-calendar refetch to 1.
+  - [x] Recurring create instances — `postEvent` with recurrence uses `fetchCalendarRef` instead of `ADD_EVENT` so all instances appear immediately without a manual refresh.
+  - [x] Add repeat to existing event — Repeat UI shown in edit mode for non-recurring events. `putEvent` signature extended with `recurrence?: string[]`. Google requires `timeZone` in start/end when recurrence is present — use `Intl.DateTimeFormat().resolvedOptions().timeZone`. CalendarPanel `onSave` branches on `updates.recurrence?.length`: fetchCalendarRef if set, UPDATE_EVENT dispatch if not.
 
-  7.2 Robustness
-  - [ ] Error handling + user-facing messages for all failure cases
+  7.2 Robustness ✅ DONE
+  - [x] Error handling + user-facing messages for all failure cases
 
-  7.3 Auth
-  - [ ] Easier authentication method for multiple accounts, do not require GCP setup
+  7.5 Keyboard Shortcuts ← NEXT
+  - [ ] Open calendar leaf — `this.addCommand()` in `main.ts`
+  - [ ] Toggle active view (D / 3D / W) — cycles, dispatches SET_VIEW + calls FC `changeView`
+  - [ ] Jump to today — dispatches SET_DATE + `gotoDate(new Date())`
+  - [ ] Refresh — calls `fetchAllRef.current?.()`
+  - **Bridge pattern:** Commands live in `main.ts` but need to call React state. Expose a `commandBridge` ref on the plugin class, registered by CalendarPanel on mount. CalendarPanel sets `plugin.commandBridge = { toggleView, goToToday, refresh }`. main.ts commands call through the bridge.
 
-  7.5 Keyboard shortcuts
-  - [ ] to Open Leaf
-  - [ ] to toggle between active view (D, 3d, w)
-  - [ ] to jump to today
-  - [ ] to refresh
+  7.3 Auth — Easier authentication (no GCP setup required) ← AFTER STORE PUBLISH
+  - **Decision:** Bundle plugin's own Client ID, ship PKCE flow, pursue Google OAuth verification post-publish.
+  - **Why not proxy:** Requires running infrastructure, privacy concerns, single point of failure.
+  - **Why not two flows:** Verified vs unverified is a Google-side status — code is identical. Unverified users see a warning screen ("This app isn't verified") and click through via Advanced → Continue. No code change when verification is granted.
+  - **Publish order:** Ship to Obsidian store first (unverified warning is acceptable), then apply for Google verification (privacy policy + domain required). Once verified, warning disappears automatically.
+  - **Code changes when doing this:**
+    - Remove Client ID / Client Secret input fields from `SettingsTab.ts`
+    - Remove `clientId` and `clientSecret` from `PluginData` interface in `types.ts`
+    - Remove `clientId` / `clientSecret` from `TokenStore.defaultData()`
+    - Hardcode Client ID as a constant in `OAuthManager.ts` (no secret needed for PKCE)
+    - `OAuthManager` constructor no longer takes credentials — reads hardcoded constant
+    - `main.ts` no longer calls `reloadCredentials()` on settings change (no credentials to reload)
+    - Settings tab becomes account list only (add/remove accounts, no credential fields)
+  - [ ] Remove credential fields from settings tab
+  - [ ] Hardcode Client ID in OAuthManager
+  - [ ] Clean up PluginData / TokenStore
+  - [ ] Apply for Google OAuth verification (external step, not code)
 
 ### Phase 8 Release
-  - [ ] README with GCP setup guide
+  - [ ] README with GCP setup guide (interim — until auth is simplified)
   - [ ] GitHub releases (`main.js`, `manifest.json`, `styles.css`)
   - [ ] PR to `obsidian/obsidian-releases`
 
@@ -910,7 +950,9 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 
 | Risk | Mitigation |
 |---|---|
-| OAuth community distribution | Require users to bring own GCP credentials |
+| OAuth community distribution | Bundle own Client ID (PKCE, no secret). Apply for Google verification post-publish. Unverified warning is acceptable for early users. |
+| Unverified OAuth warning screen | Warn users in README — "You'll see a Google warning screen, click Advanced → Continue. This is expected until the app is verified." |
+| Bundled Client ID revocation | All users break if Google revokes. Low risk for small OSS plugin using PKCE. Mitigated long-term by getting verified. |
 | API rate limits | 5-min polling is safe; exponential backoff on 429 |
 | `sendUpdates` defaulting to notify | Always pass `sendUpdates=none` on drags |
 | Recurring event complexity | Three cases mapped explicitly in section 5.8 |
@@ -927,7 +969,7 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | deleteRecurringAndFollowing UNTIL source | Use `instance.start`, not any edited time |
 | RRULE BYDAY empty on weekly | Default to event start date's weekday — `DAY_MAP[new Date(startStr).getDay()] ?? "MO"` |
 | Array index in strict TS | `DAY_MAP[n]` returns `string \| undefined` — always add `?? "MO"` fallback. Use `.slice(0, 10)` not `.split("T")[0]` |
-| Attendee PATCH ownership concern | `organizer` and `creator` are immutable — sending full attendees array via PATCH never changes event ownership or creates new events. Akiflow's bug was a POST, not a PATCH. |
+| Attendee PATCH ownership concern | `organizer` and `creator` are immutable — sending full attendees array via PATCH never changes event ownership or creates new events. |
 | Recurring attendee response scope | Google API does NOT support "this and following" for response status — confirmed. Options are instance ID (this event) or master ID (all events) only. |
 | TypeScript discriminated union narrowing | `props.mode === "x"` is the only safe narrowing pattern — derived booleans (`isCreate`) and `as` casts do NOT narrow |
 | RecurringModal choice type widening | When adding new choice values (e.g. `"all"`), update the type in RecurringModalProps, askRecurring signature, EditProps.askRecurring, and CalendarPanel state — all four must stay in sync |
@@ -946,6 +988,7 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | putEvent with recurrence — missing timeZone | Google returns 400 "Missing timeZone" when recurrence is added via PUT without timeZone in start/end. Always include `timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone` in start/end fields when recurrence is present. |
 | EventModal repeat UI in edit mode — TypeScript narrowing | Do NOT hoist `(props as EditProps)` to a component-level variable to use in JSX conditions — it causes narrowing errors throughout the component. Use inline cast `(props as EditProps).event.recurringEventId` directly in the JSX condition. |
 | putEvent recurrence post-write state | PUT response only returns master event, not instances. Branch in CalendarPanel onSave: if `updates.recurrence?.length` → fetchCalendarRef; else → UPDATE_EVENT dispatch. |
+| Keyboard shortcut state bridge | Commands in `main.ts` cannot directly access React state. Use a `commandBridge` object registered on the plugin class by CalendarPanel on mount. |
 
 ---
 
@@ -981,7 +1024,7 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | RecurringModal state pattern | Promise-based askRecurring in CalendarPanel | Single state location, clean callers — both eventDrop and EventModal await the same function |
 | askRecurring opts param | Optional second arg `{ title?, hideFollowing?, showAll? }` | Allows same function to serve both edit and RSVP contexts without duplicating modal state |
 | Styles | All styles in styles.css using gcal- prefixed classes | No inline styles — shared classes (gcal-modal-backdrop, gcal-input, etc.) reused across components |
-| Post-write state sync | Response body for single-event ops; fetchCalendarRef for multi-step ops | Single-event PATCH/PUT/POST return the updated event — use it directly. splitRecurringSeries and deleteRecurringAndFollowing are multi-step; use fetchCalendarRef (targeted single-calendar refetch) instead of full refetch. |
+| Post-write state sync | Response body for single-event ops; fetchCalendarRef for multi-step ops | Single-event PATCH/PUT/POST return the updated event — use it directly. splitRecurringSeries and deleteRecurringAndFollowing are multi-step; use fetchCalendarRef instead of full refetch. |
 | MERGE_EVENTS action | Added to CalendarContext reducer | Replaces all events for one calendarId, leaves others untouched. Used by fetchCalendarRef. |
 | Targeted refetch scope | fetchCalendarRef — one calendar only | splitRecurringSeries and deleteRecurringAndFollowing are confined to a single calendarId. Targeted fetch is accurate and cuts N requests to 1. |
 | Recurring create post-write | fetchCalendarRef instead of ADD_EVENT when recurrence is set | postEvent only returns master event. All instances need a fetch to appear. Non-recurring creates still use ADD_EVENT (faster). |
@@ -991,7 +1034,7 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | FullCalendar event updates | calendarRef mutation (getEventById + setProp/setStart/setEnd) + UPDATE_EVENT dispatch | events prop re-render causes duplicates — ref mutation is the only safe way to visually update a FC event without remounting the event source |
 | fcEvents memoization | useMemo keyed on [state.events, state.calendars] | Inline computation produces new array reference every render — FC treats each new reference as a new event source |
 | splitRecurringSeries UNTIL source | Use `instance.start`, not `updates.start` | UNTIL must reflect the original occurrence time the master series knows about, not the user's edited time |
-| EventModal modes | Discriminated union `type Props = EditProps | CreateProps` | Clean separation — create mode drops askRecurring/onSplitSeries entirely. TypeScript only narrows discriminated unions via direct `props.mode === "x"` checks — derived booleans (`isCreate`) and `as` casts do NOT narrow |
+| EventModal modes | Discriminated union `type Props = EditProps \| CreateProps` | Clean separation — create mode drops askRecurring/onSplitSeries entirely. TypeScript only narrows discriminated unions via direct `props.mode === "x"` checks — derived booleans (`isCreate`) and `as` casts do NOT narrow |
 | Calendar write filter | Filter by `accessRole === "owner" \|\| "writer"` in create modal dropdown | `minAccessRole=reader` returns all visible calendars including read-only — must filter for write operations |
 | accessRole storage | Added to `CalendarMeta`, mapped in `getCalendarList()` from `item.accessRole ?? "reader"` | Needed to gate write operations in UI without extra API calls |
 | allDay date handling in create | Pass full ISO string from `dateClick`, slice to `YYYY-MM-DD` on save if allDay | Keeps `toLocalInput()` working uniformly; `.slice(0, 10)` used instead of `.split("T")[0]` |
@@ -1036,6 +1079,9 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | Repeat UI in edit mode — JSX narrowing | Inline cast `(props as EditProps).event.x` in JSX condition | Hoisting to a component-level variable breaks TypeScript narrowing throughout the rest of the component. Keep the local `const editProps = props as EditProps` inside handleSave only. |
 | putEvent recurrence — timeZone required | Include `timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone` in start/end when recurrence present | Google returns 400 "Missing timeZone" otherwise. Non-recurrence PUTs do not need it. |
 | putEvent recurrence — state sync | fetchCalendarRef when `updates.recurrence?.length`, else UPDATE_EVENT | PUT with recurrence only returns master. fetchCalendarRef pulls all instances. Same pattern as postEvent with recurrence. |
+| Auth distribution approach | Bundle own Client ID (PKCE, no secret) + pursue Google verification post-publish | Proxy requires infrastructure. Two-flows not needed — verified vs unverified is Google-side only. Unverified warning screen is acceptable for early users. |
+| Auth simplification timing | After Obsidian store publish | Plugin must be published first. Google verification requires a live, published app. |
+| Keyboard shortcut state bridge | `commandBridge` object on plugin class, registered by CalendarPanel on mount | Commands in main.ts can't access React state directly. Bridge pattern keeps main.ts clean and CalendarPanel in control of its own state. |
 
 ---
 
@@ -1050,10 +1096,20 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - Phase 4: DONE
 - Phase 5: DONE
 - Phase 6: DONE (6.1, 6.2, 6.3, 6.4, 6.5 all complete)
-- Phase 7.1: DONE (grid line opacity, optimistic updates, parallel fetches confirmed, targeted single-calendar refetch, recurring create instances fix, add repeat to existing event)
+- Phase 7.1: DONE
+- Phase 7.2: DONE
 
 ### Immediate Next Steps
 
-Phase 7 remaining:
-- [ ] 7.2 Error handling + user-facing messages for all failure cases
-- [ ] 7.3 Easier authentication — no GCP setup required
+1. **Phase 7.5 — Keyboard shortcuts** (current)
+   - Register commands in `main.ts` via `this.addCommand()`
+   - Bridge pattern: expose `commandBridge` on plugin class, CalendarPanel registers handlers on mount
+   - Commands: open leaf, toggle view, go to today, refresh
+
+2. **Phase 7.3 — Auth simplification** (after store publish)
+   - Remove credential fields from settings tab
+   - Hardcode Client ID in OAuthManager
+   - Apply for Google OAuth verification
+
+3. **Phase 8 — Release**
+   - README, GitHub release, PR to obsidian-releases
