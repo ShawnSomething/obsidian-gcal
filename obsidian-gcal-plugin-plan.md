@@ -339,6 +339,8 @@ if (view === "week") {
 **Delete recurring — this event:** `DELETE` the instance ID.
 **Delete recurring — this and following:** `deleteRecurringAndFollowing()` — PATCH master UNTIL to 1 second before `instance.start`, then DELETE the instance. Rollback RRULE if DELETE fails. No POST (unlike splitRecurringSeries).
 
+**Add recurrence to existing non-recurring event:** PUT the event with `recurrence` field added. Google requires `timeZone` in `start`/`end` objects when `recurrence` is present. Use `Intl.DateTimeFormat().resolvedOptions().timeZone` for device timezone. PUT response only returns master event — use `fetchCalendarRef` (not `UPDATE_EVENT`) so all instances appear. CalendarPanel `onSave` handler branches on `updates.recurrence?.length`.
+
 **Timezone handling in EventModal:**
 - `datetime-local` inputs have no timezone awareness — always work in local time
 - `toLocalInput(isoString)` converts UTC ISO string to local time for display
@@ -356,6 +358,7 @@ function toLocalInput(isoString: string): string {
 **Post-write state sync:**
 - Single-event ops (PATCH/PUT/POST non-recurring): use response body directly — `UPDATE_EVENT` or `ADD_EVENT`, no refetch
 - Recurring create (`postEvent` with `recurrence`): use `fetchCalendarRef` — POST response only returns the master, not all instances
+- Adding recurrence to existing event (`putEvent` with `recurrence`): use `fetchCalendarRef` — PUT response only returns master, not all instances
 - Multi-step ops (`splitRecurringSeries`, `deleteRecurringAndFollowing`): use `fetchCalendarRef` — response from step 1 doesn't represent final state
 
 ### 5.8 Recurring Event Write Patterns
@@ -460,7 +463,7 @@ if (recurrence?.length) {
 
 ### 5.10 RRULE Builder (`utils/rrule.ts`)
 
-Pure function, no side effects, no imports. Used only in EventModal create mode.
+Pure function, no side effects, no imports. Used in EventModal for both create mode and adding recurrence to existing events.
 
 ```typescript
 export type RRuleFrequency = "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
@@ -488,7 +491,7 @@ export function buildRRule(options: RRuleOptions): string
 - Default day when switching to weekly with empty selection: derive from event start date using `DAY_MAP[new Date(startStr).getDay()] ?? "MO"` where `DAY_MAP = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"]`
 - "Every weekday except Wednesday" = weekly with BYDAY=MO,TU,TH,FR (Wednesday simply unchecked)
 
-**EventModal recurrence state (create mode only):**
+**EventModal recurrence state (create mode and edit mode for non-recurring events):**
 ```typescript
 const [repeat, setRepeat] = useState(false);
 const [frequency, setFrequency] = useState<RRuleFrequency>("WEEKLY");
@@ -498,6 +501,8 @@ const [endType, setEndType] = useState<"never" | "until" | "count">("never");
 const [untilDate, setUntilDate] = useState("");
 const [countNum, setCountNum] = useState(1);
 ```
+
+**Repeat UI in edit mode** — only shown when `!(props as EditProps).event.recurringEventId && !(props as EditProps).event.recurrence?.length`. Do not show for events that are already part of a series. Use inline cast in JSX condition — do not hoist to a component-level variable (causes TypeScript narrowing errors throughout).
 
 Import: `import { RRuleFrequency, RRuleDay, buildRRule } from "../utils/rrule"` — static import, not dynamic.
 
@@ -712,6 +717,7 @@ All timezone handling anchors to device local time — no timezone picker needed
 - `new Date(str).toISOString()` on save converts local → UTC correctly
 - FullCalendar defaults to browser local timezone for event positioning
 - If device timezone matches user's intended calendar timezone (the normal case), everything just works
+- When adding `recurrence` to a PUT request, Google requires `timeZone` in `start`/`end` objects. Use `Intl.DateTimeFormat().resolvedOptions().timeZone`.
 
 ---
 
@@ -879,7 +885,7 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
   - [x] **Parallel fetches** — confirmed already implemented via `Promise.all`. No change needed.
   - [x] **Targeted single-calendar refetch** — `fetchCalendarRef` pattern added. `MERGE_EVENTS` action in reducer. Used after splitRecurringSeries, deleteRecurringAndFollowing, and recurring postEvent. Cuts N-calendar refetch to 1.
   - [x] **Recurring create instances** — `postEvent` with recurrence uses `fetchCalendarRef` instead of `ADD_EVENT` so all instances appear immediately without a manual refresh.
-  - [ ] Add repeat button to EventModal — set recurrence on an existing non-recurring event
+  - [x] **Add repeat to existing event** — Repeat UI shown in edit mode for non-recurring events. `putEvent` signature extended with `recurrence?: string[]`. Google requires `timeZone` in start/end when recurrence is present — use `Intl.DateTimeFormat().resolvedOptions().timeZone`. CalendarPanel `onSave` branches on `updates.recurrence?.length`: fetchCalendarRef if set, UPDATE_EVENT dispatch if not.
 
   7.2 Robustness
   - [ ] Error handling + user-facing messages for all failure cases
@@ -887,7 +893,13 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
   7.3 Auth
   - [ ] Easier authentication method for multiple accounts, do not require GCP setup
 
-  7.4 Release
+  7.5 Keyboard shortcuts
+  - [ ] to Open Leaf
+  - [ ] to toggle between active view (D, 3d, w)
+  - [ ] to jump to today
+  - [ ] to refresh
+
+### Phase 8 Release
   - [ ] README with GCP setup guide
   - [ ] GitHub releases (`main.js`, `manifest.json`, `styles.css`)
   - [ ] PR to `obsidian/obsidian-releases`
@@ -931,6 +943,9 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | EventModal onSave Promise type | `onSave` and `onSplitSeries` must be typed as `Promise<void>`, not `void` — otherwise `await` in `handleSave` silently does nothing and `isSaving` never resets. |
 | fetchCalendarRef has no toast | Caller already has a toast running — do not add a toast inside fetchCalendarRef. It would conflict with the caller's loading/success toast sequence. |
 | Recurring create missing instances | `postEvent` only returns the master event. Use `fetchCalendarRef` when `recurrence?.length` is set — not `ADD_EVENT` — so all instances appear immediately. |
+| putEvent with recurrence — missing timeZone | Google returns 400 "Missing timeZone" when recurrence is added via PUT without timeZone in start/end. Always include `timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone` in start/end fields when recurrence is present. |
+| EventModal repeat UI in edit mode — TypeScript narrowing | Do NOT hoist `(props as EditProps)` to a component-level variable to use in JSX conditions — it causes narrowing errors throughout the component. Use inline cast `(props as EditProps).event.recurringEventId` directly in the JSX condition. |
+| putEvent recurrence post-write state | PUT response only returns master event, not instances. Branch in CalendarPanel onSave: if `updates.recurrence?.length` → fetchCalendarRef; else → UPDATE_EVENT dispatch. |
 
 ---
 
@@ -1018,6 +1033,9 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | Toast for write ops | CalendarPanel-level toast, not Obsidian Notice | Allows loading → success/error state transitions; Notice can't update in-place |
 | EventModal save button state | `isSaving` disables button + changes label | Prevents double-submit; gives user feedback that something is happening |
 | onSave prop type | `Promise<void>` not `void` | Required for `await` in handleSave to work — void return type silently skips the await |
+| Repeat UI in edit mode — JSX narrowing | Inline cast `(props as EditProps).event.x` in JSX condition | Hoisting to a component-level variable breaks TypeScript narrowing throughout the rest of the component. Keep the local `const editProps = props as EditProps` inside handleSave only. |
+| putEvent recurrence — timeZone required | Include `timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone` in start/end when recurrence present | Google returns 400 "Missing timeZone" otherwise. Non-recurrence PUTs do not need it. |
+| putEvent recurrence — state sync | fetchCalendarRef when `updates.recurrence?.length`, else UPDATE_EVENT | PUT with recurrence only returns master. fetchCalendarRef pulls all instances. Same pattern as postEvent with recurrence. |
 
 ---
 
@@ -1032,12 +1050,10 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - Phase 4: DONE
 - Phase 5: DONE
 - Phase 6: DONE (6.1, 6.2, 6.3, 6.4, 6.5 all complete)
-- Phase 7.1: DONE (grid line opacity, optimistic updates, parallel fetches confirmed, targeted single-calendar refetch, recurring create instances fix)
+- Phase 7.1: DONE (grid line opacity, optimistic updates, parallel fetches confirmed, targeted single-calendar refetch, recurring create instances fix, add repeat to existing event)
 
 ### Immediate Next Steps
 
 Phase 7 remaining:
-- [ ] 7.1 Add repeat button to EventModal — set recurrence on an existing non-recurring event
 - [ ] 7.2 Error handling + user-facing messages for all failure cases
 - [ ] 7.3 Easier authentication — no GCP setup required
-- [ ] 7.4 Release prep — README, GitHub releases, PR to obsidian-releases
