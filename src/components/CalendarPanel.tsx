@@ -3,7 +3,7 @@ import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
-import GCalPlugin from "../main";
+import GCalPlugin, { CommandBridge } from "../main";
 import { useCalendar, CalEvent } from "../context/CalendarContext";
 import { deduplicateEvents } from "../utils/dedup";
 import CalendarToggle from "./CalendarToggle";
@@ -182,6 +182,36 @@ export default function CalendarPanel({ plugin }: Props) {
     plugin.data.viewDensity = density;
     plugin.saveData(plugin.data);
   }, [density]);
+
+  useEffect(() => {
+    plugin.commandBridge = {
+      setView: (view: "day" | "3day" | "week") => {
+        setActiveView(view);
+        calendarRef.current?.getApi().changeView(VIEW_MAP[view]);
+      },
+      goToToday: () => {
+        const today = new Date();
+        dispatch({ type: "SET_DATE", payload: today });
+        calendarRef.current?.getApi().today();
+      },
+      refresh: () => {
+        fetchAllRef.current?.();
+      },
+      next: () => {
+        calendarRef.current?.getApi().next();
+        const newDate = calendarRef.current?.getApi().getDate();
+        if (newDate) dispatch({ type: "SET_DATE", payload: newDate });
+      },
+      prev: () => {
+        calendarRef.current?.getApi().prev();
+        const newDate = calendarRef.current?.getApi().getDate();
+        if (newDate) dispatch({ type: "SET_DATE", payload: newDate });
+      },
+    };
+    return () => {
+      plugin.commandBridge = null;
+    };
+  }, []);
 
   useEffect(() => {
     plugin.data.activeView = activeView;
