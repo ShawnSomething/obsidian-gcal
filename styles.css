@@ -663,6 +663,9 @@
   background: rgba(234, 67, 53, 0.15);
   color: var(--text-error);
   max-width: 220px;
+  white-space: normal;
+  text-overflow: clip;
+  text-align: center;
 }
 
 .gcal-toast-dismiss {
