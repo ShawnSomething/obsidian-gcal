@@ -631,6 +631,7 @@
 .gcal-calendar-wrapper {
   flex: 1;
   overflow: hidden;
+  --fc-border-color: rgba(128, 128, 128, 0.2);
 }
 
 /* ─── Toast ──────────────────────────────────────────────────── */

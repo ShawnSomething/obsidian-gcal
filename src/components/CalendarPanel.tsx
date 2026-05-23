@@ -363,14 +363,14 @@ export default function CalendarPanel({ plugin }: Props) {
               if (choice === "this") {
                 showToast("Moving event...", "loading");
                 try {
-                  await plugin.api.patchEventTimes(
+                  const updated = await plugin.api.patchEventTimes(
                     account,
                     calEvent.calendarId,
                     calEvent.id,
                     info.event.startStr,
                     info.event.endStr
                   );
-                  await fetchAllRef.current?.();
+                  dispatch({ type: "UPDATE_EVENT", payload: { id: updated.id, changes: updated } });
                   showToast("Event moved", "success", 2000);
                 } catch (err) {
                   info.revert();
@@ -400,16 +400,17 @@ export default function CalendarPanel({ plugin }: Props) {
 
               return;
             }
+
             showToast("Moving event...", "loading");
             try {
-              await plugin.api.patchEventTimes(
+              const updated = await plugin.api.patchEventTimes(
                 account,
                 calEvent.calendarId,
                 calEvent.id,
                 info.event.startStr,
                 info.event.endStr
               );
-              await fetchAllRef.current?.();
+              dispatch({ type: "UPDATE_EVENT", payload: { id: updated.id, changes: updated } });
               showToast("Event moved", "success", 2000);
             } catch (err) {
               info.revert();
@@ -436,20 +437,20 @@ export default function CalendarPanel({ plugin }: Props) {
               }
 
               if (choice === "this") {
-                showToast("Moving event...", "loading");
+                showToast("Resizing event...", "loading");
                 try {
-                  await plugin.api.patchEventTimes(
+                  const updated = await plugin.api.patchEventTimes(
                     account,
                     calEvent.calendarId,
                     calEvent.id,
                     info.event.startStr,
                     info.event.endStr
                   );
-                  await fetchAllRef.current?.();
-                  showToast("Event moved", "success", 2000);
+                  dispatch({ type: "UPDATE_EVENT", payload: { id: updated.id, changes: updated } });
+                  showToast("Event resized", "success", 2000);
                 } catch (err) {
                   info.revert();
-                  showToast(`Failed to move event: ${(err as Error).message}`, "error");
+                  showToast(`Failed to resize event: ${(err as Error).message}`, "error");
                 }
               } else if (choice === "following") {
                 showToast("Splitting series...", "loading");
@@ -475,16 +476,17 @@ export default function CalendarPanel({ plugin }: Props) {
 
               return;
             }
+
             showToast("Resizing event...", "loading");
             try {
-              await plugin.api.patchEventTimes(
+              const updated = await plugin.api.patchEventTimes(
                 account,
                 calEvent.calendarId,
                 calEvent.id,
                 info.event.startStr,
                 info.event.endStr
               );
-              await fetchAllRef.current?.();
+              dispatch({ type: "UPDATE_EVENT", payload: { id: updated.id, changes: updated } });
               showToast("Event resized", "success", 2000);
             } catch (err) {
               info.revert();
@@ -532,15 +534,9 @@ export default function CalendarPanel({ plugin }: Props) {
                 }
               }
               showToast("Updating response...", "loading");
-              await plugin.api.patchAttendeeResponse(
-                account,
-                editingEvent.calendarId,
-                eventId,
-                editingEvent.attendees,
-                status
-              );
+              const updated = await plugin.api.patchAttendeeResponse(account, editingEvent.calendarId, eventId, editingEvent.attendees, status);
+              dispatch({ type: "UPDATE_EVENT", payload: { id: updated.id, changes: updated } });
               setEditingEvent(null);
-              await fetchAllRef.current?.();
               showToast("Response updated", "success", 2000);
             } catch (err) {
               showToast(`Failed to update response: ${(err as Error).message}`, "error");
@@ -553,14 +549,9 @@ export default function CalendarPanel({ plugin }: Props) {
             if (!account) return;
             showToast("Saving...", "loading");
             try {
-              await plugin.api.putEvent(
-                account,
-                editingEvent.calendarId,
-                editingEvent.id,
-                updates
-              );
+              const updated = await plugin.api.putEvent(account, editingEvent.calendarId, editingEvent.id, updates);
+              dispatch({ type: "UPDATE_EVENT", payload: { id: updated.id, changes: updated } });
               setEditingEvent(null);
-              await fetchAllRef.current?.();
               showToast("Event saved", "success", 2000);
             } catch (err) {
               showToast(`Failed to save event: ${(err as Error).message}`, "error");
@@ -604,12 +595,14 @@ export default function CalendarPanel({ plugin }: Props) {
                     `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(editingEvent.calendarId)}/events/${editingEvent.id}`
                   );
                   if (!res.ok) throw new Error("Failed to delete event");
+                  dispatch({ type: "REMOVE_EVENT", payload: editingEvent.id });
                 } else {
                   await plugin.api.deleteRecurringAndFollowing(
                     account,
                     editingEvent.calendarId,
                     editingEvent
                   );
+                  await fetchAllRef.current?.();
                 }
               } else {
                 const res = await plugin.api.deleteWithAuth(
@@ -617,9 +610,9 @@ export default function CalendarPanel({ plugin }: Props) {
                   `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(editingEvent.calendarId)}/events/${editingEvent.id}`
                 );
                 if (!res.ok) throw new Error("Failed to delete event");
+                dispatch({ type: "REMOVE_EVENT", payload: editingEvent.id });
               }
               setEditingEvent(null);
-              await fetchAllRef.current?.();
               showToast("Event deleted", "success", 2000);
             } catch (err) {
               showToast(`Failed to delete event: ${(err as Error).message}`, "error");
@@ -639,10 +632,9 @@ export default function CalendarPanel({ plugin }: Props) {
             if (!account) return;
             showToast("Creating event...", "loading");
             try {
-              await plugin.api.postEvent(account, calendarId, { title, start, end, allDay, recurrence, location, description });
+              const created = await plugin.api.postEvent(account, calendarId, { title, start, end, allDay, recurrence, location, description });
+              dispatch({ type: "ADD_EVENT", payload: created });
               setCreatingEvent(null);
-              await new Promise(res => setTimeout(res, 800));
-              await fetchAllRef.current?.();
               showToast("Event created", "success", 2000);
             } catch (err) {
               showToast(`Failed to create event: ${(err as Error).message}`, "error");

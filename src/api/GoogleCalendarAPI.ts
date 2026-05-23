@@ -110,14 +110,6 @@ export class GoogleCalendarAPI {
 			visible: true,
 			accessRole: item.accessRole ?? "reader",
 		}));
-
-		console.log(
-			data.items.map((i: any) => ({
-				id: i.id,
-				summary: i.summary,
-				accessRole: i.accessRole,
-			})),
-		);
 	}
 
 	async postEvent(
@@ -132,7 +124,7 @@ export class GoogleCalendarAPI {
 			location?: string;
 			description?: string;
 		},
-	): Promise<void> {
+	): Promise<CalEvent> {
 		const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?sendUpdates=all`;
 
 		const startField = event.allDay
@@ -162,6 +154,9 @@ export class GoogleCalendarAPI {
 			const err = await response.json();
 			throw new Error(err.error?.message ?? "Failed to create event");
 		}
+
+		const data = await response.json();
+		return this.mapItem(data, calendarId, account.accountId);
 	}
 
 	async getEvents(
@@ -191,31 +186,9 @@ export class GoogleCalendarAPI {
 		const data = await response.json();
 		return (data.items ?? [])
 			.filter((item: any) => item.status !== "cancelled")
-			.map((item: any) => ({
-				id: item.id,
-				iCalUID: item.iCalUID,
-				calendarId,
-				accountId: account.accountId,
-				title: item.summary ?? "(No title)",
-				start: item.start?.dateTime ?? item.start?.date,
-				end: item.end?.dateTime ?? item.end?.date,
-				allDay: !item.start?.dateTime,
-				htmlLink: item.htmlLink ?? "",
-				color: item.colorId ?? "",
-				attendees: (item.attendees ?? []).map((a: any) => ({
-					email: a.email,
-					responseStatus: a.responseStatus,
-					self: a.self ?? false,
-				})),
-				selfResponseStatus:
-					item.attendees?.find((a: any) => a.self)?.responseStatus ??
-					"accepted",
-				recurrence: item.recurrence,
-				recurringEventId: item.recurringEventId,
-				location: item.location,
-				description: item.description,
-				hangoutLink: item.hangoutLink,
-			}));
+			.map((item: any) =>
+				this.mapItem(item, calendarId, account.accountId),
+			);
 	}
 
 	async patchEventTimes(
@@ -224,7 +197,7 @@ export class GoogleCalendarAPI {
 		eventId: string,
 		start: string,
 		end: string,
-	): Promise<void> {
+	): Promise<CalEvent> {
 		const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${eventId}?sendUpdates=none`;
 
 		const response = await this.patchWithAuth(account, url, {
@@ -236,6 +209,9 @@ export class GoogleCalendarAPI {
 			const err = await response.json();
 			throw new Error(err.error?.message ?? "Failed to update event");
 		}
+
+		const data = await response.json();
+		return this.mapItem(data, calendarId, account.accountId);
 	}
 
 	async putEvent(
@@ -250,13 +226,12 @@ export class GoogleCalendarAPI {
 			location?: string;
 			description?: string;
 		},
-	): Promise<void> {
+	): Promise<CalEvent> {
 		const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${eventId}?sendUpdates=all`;
 
 		const startField = updates.allDay
 			? { date: updates.start }
 			: { dateTime: updates.start };
-
 		const endField = updates.allDay
 			? { date: updates.end }
 			: { dateTime: updates.end };
@@ -277,6 +252,9 @@ export class GoogleCalendarAPI {
 			const err = await response.json();
 			throw new Error(err.error?.message ?? "Failed to update event");
 		}
+
+		const data = await response.json();
+		return this.mapItem(data, calendarId, account.accountId);
 	}
 
 	async getEvent(
@@ -463,7 +441,7 @@ export class GoogleCalendarAPI {
 		eventId: string,
 		attendees: Attendee[],
 		responseStatus: "accepted" | "declined" | "tentative",
-	): Promise<void> {
+	): Promise<CalEvent> {
 		const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${eventId}?sendUpdates=all`;
 
 		const updatedAttendees = attendees.map((a) =>
@@ -480,6 +458,41 @@ export class GoogleCalendarAPI {
 				err.error?.message ?? "Failed to update response status",
 			);
 		}
+
+		const data = await response.json();
+		return this.mapItem(data, calendarId, account.accountId);
+	}
+
+	private mapItem(
+		item: any,
+		calendarId: string,
+		accountId: string,
+	): CalEvent {
+		return {
+			id: item.id,
+			iCalUID: item.iCalUID,
+			calendarId,
+			accountId,
+			title: item.summary ?? "(No title)",
+			start: item.start?.dateTime ?? item.start?.date,
+			end: item.end?.dateTime ?? item.end?.date,
+			allDay: !item.start?.dateTime,
+			htmlLink: item.htmlLink ?? "",
+			color: item.colorId ?? "",
+			attendees: (item.attendees ?? []).map((a: any) => ({
+				email: a.email,
+				responseStatus: a.responseStatus,
+				self: a.self ?? false,
+			})),
+			selfResponseStatus:
+				item.attendees?.find((a: any) => a.self)?.responseStatus ??
+				"accepted",
+			recurrence: item.recurrence,
+			recurringEventId: item.recurringEventId,
+			location: item.location,
+			description: item.description,
+			hangoutLink: item.hangoutLink,
+		};
 	}
 
 	private async ensureFreshToken(account: AccountConfig): Promise<string> {
