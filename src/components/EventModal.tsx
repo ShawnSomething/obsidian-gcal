@@ -6,8 +6,8 @@ type EditProps = {
   mode: "edit";
   event: CalEvent;
   askRecurring: (event: CalEvent, opts?: { title?: string; hideFollowing?: boolean; showAll?: boolean }) => Promise<"this" | "following" | "all" | null>;
-  onSave: (updates: { title: string; start: string; end: string; allDay: boolean; location?: string; description?: string }) => void;
-  onSplitSeries: (updates: { title: string; start: string; end: string; allDay: boolean; location?: string; description?: string }) => void;
+  onSave: (updates: { title: string; start: string; end: string; allDay: boolean; location?: string; description?: string }) => Promise<void>;
+  onSplitSeries: (updates: { title: string; start: string; end: string; allDay: boolean; location?: string; description?: string }) => Promise<void>;
   onDelete: () => void;
   onRespond?: (status: "accepted" | "declined" | "tentative") => void;
   onClose: () => void;
@@ -18,17 +18,7 @@ type CreateProps = {
   initialStart: string;
   initialEnd: string;
   initialAllDay: boolean;
-  onSave: (data: {
-    title: string;
-    start: string;
-    end: string;
-    allDay: boolean;
-    calendarId: string;
-    accountId: string;
-    recurrence?: string[];
-    location?: string;
-    description?: string;
-  }) => void;
+  onSave: (data: { title: string; start: string; end: string; allDay: boolean; calendarId: string; accountId: string; recurrence?: string[]; location?: string; description?: string; }) => Promise<void>;
   onClose: () => void;
 };
 
@@ -77,6 +67,7 @@ export default function EventModal(props: Props) {
     isCreate ? "" : ((props as EditProps).event.description ?? "")
   );
   const [showAllGuests, setShowAllGuests] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const hangoutLink = isCreate ? undefined : (props as EditProps).event.hangoutLink;
   const attendees = isCreate ? [] : (props as EditProps).event.attendees;
@@ -108,62 +99,66 @@ export default function EventModal(props: Props) {
   const [selectedCalendarId, setSelectedCalendarId] = useState(defaultCal?.id ?? "");
 
   const handleSave = async () => {
-    const startISO = new Date(start).toISOString();
-    const endISO = new Date(end).toISOString();
-    const finalStart = allDay ? startISO.slice(0, 10) : startISO;
-    const finalEnd = allDay ? endISO.slice(0, 10) : endISO;
+    setIsSaving(true);
+    try {
+      const startISO = new Date(start).toISOString();
+      const endISO = new Date(end).toISOString();
+      const finalStart = allDay ? startISO.slice(0, 10) : startISO;
+      const finalEnd = allDay ? endISO.slice(0, 10) : endISO;
 
-    if (isCreate) {
-      const cal = state.calendars.find(c => c.id === selectedCalendarId);
-      let recurrence: string[] | undefined;
-      if (repeat) {
-        const rrule = buildRRule({
-          frequency,
-          interval,
-          days: frequency === "WEEKLY" ? days : undefined,
-          end:
-            endType === "until"
-              ? { type: "until", date: untilDate }
-              : endType === "count"
-                ? { type: "count", count: countNum }
-                : { type: "never" },
+      if (isCreate) {
+        const cal = state.calendars.find(c => c.id === selectedCalendarId);
+        let recurrence: string[] | undefined;
+        if (repeat) {
+          const rrule = buildRRule({
+            frequency,
+            interval,
+            days: frequency === "WEEKLY" ? days : undefined,
+            end:
+              endType === "until"
+                ? { type: "until", date: untilDate }
+                : endType === "count"
+                  ? { type: "count", count: countNum }
+                  : { type: "never" },
+          });
+          recurrence = [rrule];
+        }
+        await (props as CreateProps).onSave({
+          title,
+          start: finalStart,
+          end: finalEnd,
+          allDay,
+          calendarId: selectedCalendarId,
+          accountId: cal?.accountId ?? "",
+          recurrence,
+          location: location || undefined,
+          description: description || undefined,
         });
-        recurrence = [rrule];
+        return;
       }
-      (props as CreateProps).onSave({
+
+      const editProps = props as EditProps;
+      const updates = {
         title,
         start: finalStart,
         end: finalEnd,
         allDay,
-        calendarId: selectedCalendarId,
-        accountId: cal?.accountId ?? "",
-        recurrence,
         location: location || undefined,
         description: description || undefined,
-      });
-      return;
+      };
+
+      if (editProps.event.recurringEventId) {
+        const choice = await editProps.askRecurring(editProps.event);
+        if (!choice) return;
+        if (choice === "following") {
+          await editProps.onSplitSeries(updates);
+          return;
+        }
+      } 
+      await editProps.onSave(updates);
+    } finally {
+      setIsSaving(false)
     }
-
-    const editProps = props as EditProps;
-    const updates = {
-      title,
-      start: finalStart,
-      end: finalEnd,
-      allDay,
-      location: location || undefined,
-      description: description || undefined,
-    };
-
-    if (editProps.event.recurringEventId) {
-      const choice = await editProps.askRecurring(editProps.event);
-      if (!choice) return;
-      if (choice === "following") {
-        editProps.onSplitSeries(updates);
-        return;
-      }
-    }
-
-    editProps.onSave(updates);
   };
 
   const selectedCal = state.calendars.find(c => c.id === selectedCalendarId);
@@ -468,8 +463,8 @@ export default function EventModal(props: Props) {
             </button>
           )}
           <button className="gcal-modal-cancel" onClick={props.onClose}>Cancel</button>
-          <button className="gcal-btn-primary" onClick={handleSave}>
-            {isCreate ? "Create" : "Save"}
+          <button className="gcal-btn-primary" onClick={handleSave} disabled={isSaving}>
+            {isSaving ? "Saving..." : isCreate ? "Create" : "Save"}
           </button>
         </div>
 

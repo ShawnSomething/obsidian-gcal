@@ -61,6 +61,17 @@ export default function CalendarPanel({ plugin }: Props) {
     plugin.data.viewDensity ?? "compact"
   );
 
+  const [toast, setToast] = useState<{ message: string; type: "loading" | "success" | "error" } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = (message: string, type: "loading" | "success" | "error", autoDismissMs?: number) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ message, type });
+    if (autoDismissMs) {
+      toastTimerRef.current = setTimeout(() => setToast(null), autoDismissMs);
+    }
+  };
+
   const askRecurring = (
     event: CalEvent,
     opts?: { title?: string; hideFollowing?: boolean; showAll?: boolean }
@@ -79,6 +90,7 @@ export default function CalendarPanel({ plugin }: Props) {
     const accounts = plugin.data.accounts;
     if (!accounts.length) return;
 
+    showToast("Loading calendars...", "loading");
     dispatch({ type: "SET_LOADING", payload: true });
     dispatch({ type: "SET_ERROR", payload: null });
 
@@ -113,8 +125,9 @@ export default function CalendarPanel({ plugin }: Props) {
       ).flat();
 
       dispatch({ type: "SET_EVENTS", payload: deduplicateEvents(allEvents) });
+      setToast(null);
     } catch (err) {
-      dispatch({ type: "SET_ERROR", payload: (err as Error).message });
+      showToast((err as Error).message, "error");
     } finally {
       dispatch({ type: "SET_LOADING", payload: false });
     }
@@ -220,6 +233,18 @@ export default function CalendarPanel({ plugin }: Props) {
             ›
           </button>
         </div>
+
+        <div>
+          {toast && (
+            <div className={`gcal-toast gcal-toast--${toast.type}`}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{toast.message}</span>
+              {toast.type === "error" && (
+                <button className="gcal-toast-dismiss" onClick={() => setToast(null)}>×</button>
+              )}
+            </div>
+          )}
+        </div>
+
         <div className="gcal-panel-header-left">
           <button
             onClick={() => fetchAllRef.current?.()}
@@ -255,17 +280,6 @@ export default function CalendarPanel({ plugin }: Props) {
           ))}
         </div>
       </div>
-
-      {state.error && (
-        <div className="gcal-panel-error">
-          {state.error}
-        </div>
-      )}
-      {state.isLoading && state.events.length === 0 && (
-        <div className="gcal-panel-loading">
-          Loading calendars...
-        </div>
-      )}
 
       <div ref={calendarWrapperRef} className={`gcal-density-${density} gcal-calendar-wrapper`}>
         <FullCalendar
@@ -310,6 +324,7 @@ export default function CalendarPanel({ plugin }: Props) {
               }
 
               if (choice === "this") {
+                showToast("Moving event...", "loading");
                 try {
                   await plugin.api.patchEventTimes(
                     account,
@@ -319,11 +334,13 @@ export default function CalendarPanel({ plugin }: Props) {
                     info.event.endStr
                   );
                   await fetchAllRef.current?.();
+                  showToast("Event moved", "success", 2000);
                 } catch (err) {
                   info.revert();
-                  dispatch({ type: "SET_ERROR", payload: `Failed to move event: ${(err as Error).message}` });
+                  showToast(`Failed to move event: ${(err as Error).message}`, "error");
                 }
               } else if (choice === "following") {
+                showToast("Splitting series...", "loading");
                 try {
                   await plugin.api.splitRecurringSeries(
                     account,
@@ -337,15 +354,16 @@ export default function CalendarPanel({ plugin }: Props) {
                     }
                   );
                   await fetchAllRef.current?.();
+                  showToast("Series split", "success", 2000);
                 } catch (err) {
                   info.revert();
-                  dispatch({ type: "SET_ERROR", payload: `Failed to split series: ${(err as Error).message}` });
+                  showToast(`Failed to split series: ${(err as Error).message}`, "error");
                 }
               }
 
               return;
             }
-
+            showToast("Moving event...", "loading");
             try {
               await plugin.api.patchEventTimes(
                 account,
@@ -355,12 +373,10 @@ export default function CalendarPanel({ plugin }: Props) {
                 info.event.endStr
               );
               await fetchAllRef.current?.();
+              showToast("Event moved", "success", 2000);
             } catch (err) {
               info.revert();
-              dispatch({
-                type: "SET_ERROR",
-                payload: `Failed to move event: ${(err as Error).message}`,
-              });
+              showToast(`Failed to move event: ${(err as Error).message}`, "error");
             }
           }}
 
@@ -383,6 +399,7 @@ export default function CalendarPanel({ plugin }: Props) {
               }
 
               if (choice === "this") {
+                showToast("Moving event...", "loading");
                 try {
                   await plugin.api.patchEventTimes(
                     account,
@@ -392,11 +409,13 @@ export default function CalendarPanel({ plugin }: Props) {
                     info.event.endStr
                   );
                   await fetchAllRef.current?.();
+                  showToast("Event moved", "success", 2000);
                 } catch (err) {
                   info.revert();
-                  dispatch({ type: "SET_ERROR", payload: `Failed to resize event: ${(err as Error).message}` });
+                  showToast(`Failed to move event: ${(err as Error).message}`, "error");
                 }
               } else if (choice === "following") {
+                showToast("Splitting series...", "loading");
                 try {
                   await plugin.api.splitRecurringSeries(
                     account,
@@ -410,15 +429,16 @@ export default function CalendarPanel({ plugin }: Props) {
                     }
                   );
                   await fetchAllRef.current?.();
+                  showToast("Series split", "success", 2000);
                 } catch (err) {
                   info.revert();
-                  dispatch({ type: "SET_ERROR", payload: `Failed to split series: ${(err as Error).message}` });
+                  showToast(`Failed to split series: ${(err as Error).message}`, "error");
                 }
               }
 
               return;
             }
-
+            showToast("Resizing event...", "loading");
             try {
               await plugin.api.patchEventTimes(
                 account,
@@ -428,12 +448,10 @@ export default function CalendarPanel({ plugin }: Props) {
                 info.event.endStr
               );
               await fetchAllRef.current?.();
+              showToast("Event resized", "success", 2000);
             } catch (err) {
               info.revert();
-              dispatch({
-                type: "SET_ERROR",
-                payload: `Failed to resize event: ${(err as Error).message}`,
-              });
+              showToast(`Failed to resize event: ${(err as Error).message}`, "error");
             }
           }}
 
@@ -476,6 +494,7 @@ export default function CalendarPanel({ plugin }: Props) {
                   eventId = editingEvent.recurringEventId;
                 }
               }
+              showToast("Updating response...", "loading");
               await plugin.api.patchAttendeeResponse(
                 account,
                 editingEvent.calendarId,
@@ -485,11 +504,9 @@ export default function CalendarPanel({ plugin }: Props) {
               );
               setEditingEvent(null);
               await fetchAllRef.current?.();
+              showToast("Response updated", "success", 2000);
             } catch (err) {
-              dispatch({
-                type: "SET_ERROR",
-                payload: `Failed to update response: ${(err as Error).message}`,
-              });
+              showToast(`Failed to update response: ${(err as Error).message}`, "error");
             }
           }}
           onSave={async (updates) => {
@@ -497,6 +514,7 @@ export default function CalendarPanel({ plugin }: Props) {
               (a) => a.accountId === editingEvent.accountId
             );
             if (!account) return;
+            showToast("Saving...", "loading");
             try {
               await plugin.api.putEvent(
                 account,
@@ -506,11 +524,9 @@ export default function CalendarPanel({ plugin }: Props) {
               );
               setEditingEvent(null);
               await fetchAllRef.current?.();
+              showToast("Event saved", "success", 2000);
             } catch (err) {
-              dispatch({
-                type: "SET_ERROR",
-                payload: `Failed to save event: ${(err as Error).message}`,
-              });
+              showToast(`Failed to save event: ${(err as Error).message}`, "error");
             }
           }}
           onSplitSeries={async (updates) => {
@@ -518,6 +534,7 @@ export default function CalendarPanel({ plugin }: Props) {
               (a) => a.accountId === editingEvent!.accountId
             );
             if (!account) return;
+            showToast("Splitting series...", "loading");
             try {
               await plugin.api.splitRecurringSeries(
                 account,
@@ -527,11 +544,9 @@ export default function CalendarPanel({ plugin }: Props) {
               );
               setEditingEvent(null);
               await fetchAllRef.current?.();
+              showToast("Series split", "success", 2000);
             } catch (err) {
-              dispatch({
-                type: "SET_ERROR",
-                payload: `Failed to split series: ${(err as Error).message}`,
-              });
+              showToast(`Failed to split series: ${(err as Error).message}`, "error");
             }
           }}
 
@@ -541,10 +556,11 @@ export default function CalendarPanel({ plugin }: Props) {
               (a) => a.accountId === editingEvent.accountId
             );
             if (!account) return;
+            showToast("Deleting...", "loading");
             try {
               if (editingEvent.recurringEventId) {
                 const choice = await askRecurring(editingEvent);
-                if (!choice) return;
+                if (!choice) { setToast(null); return; }
                 if (choice === "this") {
                   const res = await plugin.api.deleteWithAuth(
                     account,
@@ -567,11 +583,9 @@ export default function CalendarPanel({ plugin }: Props) {
               }
               setEditingEvent(null);
               await fetchAllRef.current?.();
+              showToast("Event deleted", "success", 2000);
             } catch (err) {
-              dispatch({
-                type: "SET_ERROR",
-                payload: `Failed to delete event: ${(err as Error).message}`,
-              });
+              showToast(`Failed to delete event: ${(err as Error).message}`, "error");
             }
           }}
         />
@@ -586,16 +600,15 @@ export default function CalendarPanel({ plugin }: Props) {
           onSave={async ({ title, start, end, allDay, calendarId, accountId, recurrence, location, description }) => {
             const account = plugin.data.accounts.find((a) => a.accountId === accountId);
             if (!account) return;
+            showToast("Creating event...", "loading");
             try {
               await plugin.api.postEvent(account, calendarId, { title, start, end, allDay, recurrence, location, description });
               setCreatingEvent(null);
               await new Promise(res => setTimeout(res, 800));
               await fetchAllRef.current?.();
+              showToast("Event created", "success", 2000);
             } catch (err) {
-              dispatch({
-                type: "SET_ERROR",
-                payload: `Failed to create event: ${(err as Error).message}`,
-              });
+              showToast(`Failed to create event: ${(err as Error).message}`, "error");
             }
           }}
           onClose={() => setCreatingEvent(null)}
