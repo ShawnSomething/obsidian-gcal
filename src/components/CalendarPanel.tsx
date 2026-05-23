@@ -89,6 +89,7 @@ export default function CalendarPanel({ plugin }: Props) {
   };
 
   const fetchAllRef = useRef<(() => Promise<void>) | undefined>(undefined);
+  const fetchCalendarRef = useRef<((calendarId: string, accountId: string) => Promise<void>) | undefined>(undefined);
 
   const calendarRef = useRef<FullCalendar>(null);
   const calendarWrapperRef = useRef<HTMLDivElement>(null);
@@ -138,6 +139,14 @@ export default function CalendarPanel({ plugin }: Props) {
     } finally {
       dispatch({ type: "SET_LOADING", payload: false });
     }
+  };
+
+  fetchCalendarRef.current = async (calendarId: string, accountId: string) => {
+    const account = plugin.data.accounts.find((a) => a.accountId === accountId);
+    if (!account) return;
+    const { timeMin, timeMax } = getViewWindow(state.selectedDate, activeView);
+    const events = await plugin.api.getEvents(account, calendarId, timeMin, timeMax);
+    dispatch({ type: "MERGE_EVENTS", payload: { calendarId, events } });
   };
 
   useEffect(() => {
@@ -390,7 +399,7 @@ export default function CalendarPanel({ plugin }: Props) {
                       allDay: calEvent.allDay,
                     }
                   );
-                  await fetchAllRef.current?.();
+                  await fetchCalendarRef.current?.(calEvent.calendarId, calEvent.accountId);
                   showToast("Series split", "success", 2000);
                 } catch (err) {
                   info.revert();
@@ -466,7 +475,7 @@ export default function CalendarPanel({ plugin }: Props) {
                       allDay: calEvent.allDay,
                     }
                   );
-                  await fetchAllRef.current?.();
+                  await fetchCalendarRef.current?.(calEvent.calendarId, calEvent.accountId);
                   showToast("Series split", "success", 2000);
                 } catch (err) {
                   info.revert();
@@ -571,7 +580,7 @@ export default function CalendarPanel({ plugin }: Props) {
                 updates
               );
               setEditingEvent(null);
-              await fetchAllRef.current?.();
+              await fetchCalendarRef.current?.(editingEvent!.calendarId, editingEvent!.accountId);
               showToast("Series split", "success", 2000);
             } catch (err) {
               showToast(`Failed to split series: ${(err as Error).message}`, "error");
@@ -602,7 +611,7 @@ export default function CalendarPanel({ plugin }: Props) {
                     editingEvent.calendarId,
                     editingEvent
                   );
-                  await fetchAllRef.current?.();
+                  await fetchCalendarRef.current?.(editingEvent.calendarId, editingEvent.accountId);
                 }
               } else {
                 const res = await plugin.api.deleteWithAuth(
@@ -633,7 +642,11 @@ export default function CalendarPanel({ plugin }: Props) {
             showToast("Creating event...", "loading");
             try {
               const created = await plugin.api.postEvent(account, calendarId, { title, start, end, allDay, recurrence, location, description });
-              dispatch({ type: "ADD_EVENT", payload: created });
+              if (recurrence?.length) {
+                await fetchCalendarRef.current?.(calendarId, accountId);
+              } else {
+                dispatch({ type: "ADD_EVENT", payload: created });
+              }
               setCreatingEvent(null);
               showToast("Event created", "success", 2000);
             } catch (err) {

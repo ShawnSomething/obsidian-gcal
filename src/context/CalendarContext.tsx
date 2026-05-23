@@ -76,7 +76,8 @@ type Action =
   | { type: "UPDATE_EVENT"; payload: { id: string; changes: Partial<CalEvent> } }
   | { type: "SET_ERROR"; payload: string | null }
   | { type: "ADD_EVENT"; payload: CalEvent }
-  | { type: "REMOVE_EVENT"; payload: string };
+  | { type: "REMOVE_EVENT"; payload: string }
+  | { type: "MERGE_EVENTS"; payload: { calendarId: string; events: CalEvent[] } };
 
 // ─── Reducer ─────────────────────────────────────────────────────────────────
 
@@ -128,6 +129,15 @@ function calendarReducer(state: CalendarState, action: Action): CalendarState {
       return {
         ...state,
         events: state.events.filter((e) => e.id !== action.payload),
+      };
+
+    case "MERGE_EVENTS":
+      return {
+        ...state,
+        events: [
+          ...state.events.filter((e) => e.calendarId !== action.payload.calendarId),
+          ...action.payload.events,
+        ],
       };
 
     default:
