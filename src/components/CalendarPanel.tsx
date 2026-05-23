@@ -68,6 +68,9 @@ export default function CalendarPanel({ plugin }: Props) {
     plugin.data.activeView ?? "week"
   );
 
+  const [viewPopoverOpen, setViewPopoverOpen] = useState(false);
+  const viewPopoverRef = useRef<HTMLDivElement>(null);
+
   const showToast = (message: string, type: "loading" | "success" | "error", autoDismissMs?: number) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ message, type });
@@ -176,6 +179,17 @@ export default function CalendarPanel({ plugin }: Props) {
     plugin.saveData(plugin.data);
   }, [activeView]);
 
+  useEffect(() => {
+    if (!viewPopoverOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (viewPopoverRef.current && !viewPopoverRef.current.contains(e.target as Node)) {
+        setViewPopoverOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [viewPopoverOpen]);
+
   const handleDateSelect = (date: Date) => {
     dispatch({ type: "SET_DATE", payload: date });
     calendarRef.current?.getApi().gotoDate(date);
@@ -275,18 +289,32 @@ export default function CalendarPanel({ plugin }: Props) {
           >
             {density === "compact" ? "S" : density === "medium" ? "M" : "L"}
           </button>
-          {(["day", "3day", "week"] as const).map((v) => (
+          <div ref={viewPopoverRef} style={{ position: "relative" }}>
             <button
-              key={v}
-              onClick={() => {
-                setActiveView(v);
-                calendarRef.current?.getApi().changeView(VIEW_MAP[v]);
-              }}
-              className={`gcal-panel-btn-view${activeView === v ? " gcal-panel-btn-view--active" : ""}`}
+              className="gcal-panel-btn-icon"
+              onClick={() => setViewPopoverOpen((o) => !o)}
+              title="Change view"
             >
-              {v === "day" ? "D" : v === "3day" ? "3D" : "W"}
+              View
             </button>
-          ))}
+            {viewPopoverOpen && (
+              <div className="gcal-view-popover">
+                {(["day", "3day", "week"] as const).map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => {
+                      setActiveView(v);
+                      calendarRef.current?.getApi().changeView(VIEW_MAP[v]);
+                      setViewPopoverOpen(false);
+                    }}
+                    className={`gcal-panel-btn-view${activeView === v ? " gcal-panel-btn-view--active" : ""}`}
+                  >
+                    {v === "day" ? "D" : v === "3day" ? "3D" : "W"}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

@@ -823,3 +823,20 @@
 .fc-timeGridDay-view .fc-day-today {
   background: transparent !important;
 }
+
+/* ─── Active view popover ──────────────────── */
+
+.gcal-view-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 4px;
+  display: flex;
+  flex-direction: row;
+  gap: 2px;
+  z-index: 100;
+  min-width: 48px;
+}
