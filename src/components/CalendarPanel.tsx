@@ -559,7 +559,11 @@ export default function CalendarPanel({ plugin }: Props) {
             showToast("Saving...", "loading");
             try {
               const updated = await plugin.api.putEvent(account, editingEvent.calendarId, editingEvent.id, updates);
-              dispatch({ type: "UPDATE_EVENT", payload: { id: updated.id, changes: updated } });
+              if (updates.recurrence?.length) {
+                await fetchCalendarRef.current?.(editingEvent.calendarId, editingEvent.accountId);
+              } else {
+                dispatch({ type: "UPDATE_EVENT", payload: { id: updated.id, changes: updated } });
+              }
               setEditingEvent(null);
               showToast("Event saved", "success", 2000);
             } catch (err) {

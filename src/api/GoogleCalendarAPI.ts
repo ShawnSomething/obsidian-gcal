@@ -225,16 +225,18 @@ export class GoogleCalendarAPI {
 			allDay: boolean;
 			location?: string;
 			description?: string;
+			recurrence?: string[];
 		},
 	): Promise<CalEvent> {
 		const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${eventId}?sendUpdates=all`;
 
 		const startField = updates.allDay
-			? { date: updates.start }
-			: { dateTime: updates.start };
+  		? { date: updates.start }
+  		: { dateTime: updates.start, ...(updates.recurrence ? { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone } : {}) };
+
 		const endField = updates.allDay
-			? { date: updates.end }
-			: { dateTime: updates.end };
+		? { date: updates.end }
+		: { dateTime: updates.end, ...(updates.recurrence ? { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone } : {}) };
 
 		const response = await this.putWithAuth(account, url, {
 			summary: updates.title,
@@ -246,6 +248,7 @@ export class GoogleCalendarAPI {
 			...(updates.description !== undefined
 				? { description: updates.description }
 				: {}),
+			...(updates.recurrence !== undefined ? { recurrence: updates.recurrence } : {}),
 		});
 
 		if (!response.ok) {

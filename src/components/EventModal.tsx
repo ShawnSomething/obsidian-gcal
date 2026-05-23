@@ -6,7 +6,7 @@ type EditProps = {
   mode: "edit";
   event: CalEvent;
   askRecurring: (event: CalEvent, opts?: { title?: string; hideFollowing?: boolean; showAll?: boolean }) => Promise<"this" | "following" | "all" | null>;
-  onSave: (updates: { title: string; start: string; end: string; allDay: boolean; location?: string; description?: string }) => Promise<void>;
+  onSave: (updates: { title: string; start: string; end: string; allDay: boolean; location?: string; description?: string; recurrence?: string[] }) => Promise<void>;
   onSplitSeries: (updates: { title: string; start: string; end: string; allDay: boolean; location?: string; description?: string }) => Promise<void>;
   onDelete: () => void;
   onRespond?: (status: "accepted" | "declined" | "tentative") => void;
@@ -138,6 +138,21 @@ export default function EventModal(props: Props) {
       }
 
       const editProps = props as EditProps;
+      let recurrence: string[] | undefined;
+      if (repeat) {
+        const rrule = buildRRule({
+          frequency,
+          interval,
+          days: frequency === "WEEKLY" ? days : undefined,
+          end:
+            endType === "until"
+              ? { type: "until", date: untilDate }
+              : endType === "count"
+                ? { type: "count", count: countNum }
+                : { type: "never" },
+        });
+        recurrence = [rrule];
+      }
       const updates = {
         title,
         start: finalStart,
@@ -145,6 +160,7 @@ export default function EventModal(props: Props) {
         allDay,
         location: location || undefined,
         description: description || undefined,
+        recurrence,
       };
 
       if (editProps.event.recurringEventId) {
@@ -154,7 +170,7 @@ export default function EventModal(props: Props) {
           await editProps.onSplitSeries(updates);
           return;
         }
-      } 
+      }
       await editProps.onSave(updates);
     } finally {
       setIsSaving(false)
@@ -330,26 +346,99 @@ export default function EventModal(props: Props) {
         )}
 
         {/* Going? (edit mode) */}
-        {props.mode === "edit" && (
+        {props.mode === "edit" && !(props as EditProps).event.recurringEventId && !(props as EditProps).event.recurrence?.length && (
           <>
             <div className="gcal-modal-divider" />
-            <div className="gcal-response-row">
-              <span className="gcal-response-label">Going?</span>
-              <div className="gcal-response-buttons">
-                {(["accepted", "tentative", "declined"] as const).map(status => (
-                  <button
-                    key={status}
-                    className={`gcal-btn-response gcal-btn-response--${status}${(props as EditProps).event.selfResponseStatus === status
-                      ? " gcal-btn-response--active"
-                      : ""
-                      }`}
-                    onClick={() => (props as EditProps).onRespond?.(status)}
+            <label className="gcal-checkbox-label">
+              <input
+                type="checkbox"
+                checked={repeat}
+                onChange={e => setRepeat(e.target.checked)}
+              />
+              Repeat
+            </label>
+
+            {repeat && (
+              <div className="gcal-recurrence-block">
+                <label className="gcal-field-label">
+                  Frequency
+                  <select
+                    value={frequency}
+                    onChange={e => {
+                      const freq = e.target.value as RRuleFrequency;
+                      setFrequency(freq);
+                      if (freq === "WEEKLY" && days.length === 0) {
+                        setDays([getStartDay(start)]);
+                      }
+                    }}
+                    className="gcal-input"
                   >
-                    {status === "accepted" ? "Yes" : status === "tentative" ? "Maybe" : "No"}
-                  </button>
-                ))}
+                    <option value="DAILY">Daily</option>
+                    <option value="WEEKLY">Weekly</option>
+                    <option value="MONTHLY">Monthly</option>
+                    <option value="YEARLY">Yearly</option>
+                  </select>
+                </label>
+
+                <label className="gcal-field-label">
+                  Every
+                  <input
+                    type="number"
+                    min={1}
+                    value={interval}
+                    onChange={e => setIntervalVal(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="gcal-input"
+                  />
+                </label>
+
+                {frequency === "WEEKLY" && (
+                  <div className="gcal-day-picker">
+                    {ALL_DAYS.map(day => (
+                      <button
+                        key={day}
+                        className={`gcal-day-btn${days.includes(day) ? " gcal-day-btn--active" : ""}`}
+                        onClick={() => toggleDay(day)}
+                      >
+                        {DAY_LABELS[day]}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <label className="gcal-field-label">
+                  Ends
+                  <select
+                    value={endType}
+                    onChange={e => setEndType(e.target.value as "never" | "until" | "count")}
+                    className="gcal-input"
+                  >
+                    <option value="never">Never</option>
+                    <option value="until">On date</option>
+                    <option value="count">After N occurrences</option>
+                  </select>
+                </label>
+
+                {endType === "until" && (
+                  <label className="gcal-field-label">
+                    End date
+                    <input type="date" value={untilDate} onChange={e => setUntilDate(e.target.value)} className="gcal-input" />
+                  </label>
+                )}
+
+                {endType === "count" && (
+                  <label className="gcal-field-label">
+                    Occurrences
+                    <input
+                      type="number"
+                      min={1}
+                      value={countNum}
+                      onChange={e => setCountNum(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="gcal-input"
+                    />
+                  </label>
+                )}
               </div>
-            </div>
+            )}
           </>
         )}
 
