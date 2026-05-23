@@ -422,6 +422,23 @@ await new Promise(res => setTimeout(res, 800));
 await fetchAllRef.current?.();
 ```
 
+**View toggle — `changeView()` + `SET_DATE` sync:**
+FC has `prev()`, `next()`, `today()`, and `changeView()` on the API. After calling `prev()` or `next()`, read the new date back via `getDate()` and dispatch `SET_DATE` to keep context in sync with the fetch window:
+```typescript
+calendarRef.current?.getApi().prev();
+const newDate = calendarRef.current?.getApi().getDate();
+if (newDate) dispatch({ type: "SET_DATE", payload: newDate });
+```
+`changeView()` is used for D/3D/W toggle — dispatch `SET_VIEW` at the same time.
+
+**Today highlight in day view:**
+FC applies `.fc-day-today` background across all views. In day view this is redundant and visually noisy. Suppress with:
+```css
+.fc-timeGridDay-view .fc-day-today {
+  background: transparent !important;
+}
+```
+
 ### 5.10 RRULE Builder (`utils/rrule.ts`)
 
 Pure function, no side effects, no imports. Used only in EventModal create mode.
@@ -610,21 +627,70 @@ const handleDateSelect = (date: Date) => {
 };
 ```
 
-**Header layout:**
+**Header layout (final):**
 ```tsx
 <div className="gcal-panel-header">
-  <MiniMonth selectedDate={state.selectedDate} onDateSelect={handleDateSelect} />
+  <div style={{ display: "flex", alignItems: "center", gap: "2px" }}>
+    <MiniMonth selectedDate={state.selectedDate} onDateSelect={handleDateSelect} />
+    <button onClick={goToToday} className="gcal-panel-btn-icon" title="Go to today">T</button>
+    <button onClick={goPrev} className="gcal-panel-btn-icon" title="Previous">‹</button>
+    <button onClick={goNext} className="gcal-panel-btn-icon" title="Next">›</button>
+  </div>
   <div className="gcal-panel-header-left">
     <button>↻</button>
     <CalendarToggle />
     <button>{density}</button>
+    {/* D / 3D / W view toggle buttons */}
   </div>
 </div>
 ```
 
-`gcal-panel-header` uses `justify-content: space-between` — MiniMonth left, buttons right.
+MiniMonth + T + ‹ › are grouped left. Refresh + CalendarToggle + density + view toggle are grouped right via `gcal-panel-header-left`. Header uses `justify-content: space-between`.
 
 **Popover width:** `240px` — 220px clips the Sunday column. Do not go narrower.
+
+### 5.16 Header Navigation Buttons
+
+**T button** — jumps to today. Calls `calendarRef.current?.getApi().today()` + dispatches `SET_DATE` with `new Date()`. Sits immediately right of MiniMonth trigger, inside the left group div.
+
+**‹ / › buttons** — prev/next navigation. Call `prev()` / `next()` on FC API, then read back the new date via `getDate()` and dispatch `SET_DATE`. FC handles the per-view step size automatically (1 day / 3 days / 7 days).
+
+```typescript
+// prev
+calendarRef.current?.getApi().prev();
+const newDate = calendarRef.current?.getApi().getDate();
+if (newDate) dispatch({ type: "SET_DATE", payload: newDate });
+
+// next
+calendarRef.current?.getApi().next();
+const newDate = calendarRef.current?.getApi().getDate();
+if (newDate) dispatch({ type: "SET_DATE", payload: newDate });
+```
+
+**View toggle buttons (D / 3D / W)** — sit in the right group (`gcal-panel-header-left`). Rendered via `.map()` over `["day", "3day", "week"]`. On click: dispatch `SET_VIEW` + call `calendarRef.current?.getApi().changeView(VIEW_MAP[v])`. Active state highlighted via `gcal-panel-btn-view--active` class.
+
+```tsx
+{(["day", "3day", "week"] as const).map((v) => (
+  <button
+    key={v}
+    onClick={() => {
+      dispatch({ type: "SET_VIEW", payload: v });
+      calendarRef.current?.getApi().changeView(VIEW_MAP[v]);
+    }}
+    className={`gcal-panel-btn-view${state.activeView === v ? " gcal-panel-btn-view--active" : ""}`}
+  >
+    {v === "day" ? "D" : v === "3day" ? "3D" : "W"}
+  </button>
+))}
+```
+
+**Today highlight suppression in day view:**
+FC applies `.fc-day-today` yellow background in all views. In day view it is redundant. Override:
+```css
+.fc-timeGridDay-view .fc-day-today {
+  background: transparent !important;
+}
+```
 
 ---
 
@@ -764,12 +830,13 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
   - [x] Styling the recurring modal for better UI — centred layout, 22px vertical padding on option buttons, centred cancel
   - [x] Drag to create — `select` callback replaces `dateClick`, 800ms delay before refetch for Google API propagation
 
-  6.4 Calendar Navigation — IN PROGRESS
+  6.4 Calendar Navigation ✅ DONE
   - [x] Add horizontal line on current time across calendar — `nowIndicator={true}` on FullCalendar, one prop, done
   - [x] Mini month navigation widget — `MiniMonth.tsx` popover, trigger top-left, dispatches SET_DATE + gotoDate
-  - [x] View toggle (Day / 3D / Week) using FullCalendar API
-  - [ ] `T` button at the top left to jump to Today/This Week
-  - [ ] Left and right buttons at the top left to navigate between days/weeks
+  - [x] View toggle (D / 3D / W) — buttons in right group, dispatch SET_VIEW + changeView(), active state highlighted
+  - [x] `T` button to jump to Today — left group next to MiniMonth, calls today() + dispatches SET_DATE
+  - [x] Left/right navigation buttons — calls prev()/next(), reads back getDate(), dispatches SET_DATE
+  - [x] Suppress today highlight in day view — `.fc-timeGridDay-view .fc-day-today { background: transparent !important; }`
 
   6.5 Misc
   - [ ] Add main timezone picker
@@ -819,6 +886,9 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | MiniMonth day cell sizing | Do NOT use `aspect-ratio: 1` on day cells — unreliable in Electron/Obsidian. Use explicit `width: 28px; height: 28px` instead. |
 | MiniMonth popover width | Must be at least 240px — 220px clips the Sunday column due to 7 × 28px cells + gaps. |
 | Editing outer container class | Never change the root return div's className when adding a child feature. Changing `gcal-panel-container` to `gcal-panel-header` broke the entire layout. Only touch what the task requires. |
+| FC today highlight in day view | `.fc-day-today` background shows in all views including day view. Suppress with `.fc-timeGridDay-view .fc-day-today { background: transparent !important; }` |
+| Header T/‹/› floating in space-between gap | MiniMonth and nav buttons must be wrapped in a shared flex div — otherwise `justify-content: space-between` pushes them into the middle gap. |
+| FC prev/next date sync | After calling `prev()` or `next()`, read date back via `getDate()` and dispatch `SET_DATE` — FC and context must stay in sync for fetch window to be correct. |
 
 ---
 
@@ -895,6 +965,10 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | MiniMonth date select | Dispatch SET_DATE + calendarRef.getApi().gotoDate() | Both needed — context drives fetch window, FC API moves the visual |
 | MiniMonth day cell sizing | Explicit width/height (28px) not aspect-ratio | aspect-ratio unreliable in Electron/Obsidian |
 | MiniMonth popover width | 240px | 220px clips Sunday column |
+| View toggle button style | Single button per view (D/3D/W), not a cycling button | Cycling view button requires knowing current state to predict next — direct selection is clearer and faster |
+| Today highlight in day view | Suppressed via CSS | In day view the yellow background is redundant — the entire view is already "today". Distracting when living on day view. |
+| T / ‹ / › button grouping | Wrapped with MiniMonth in a shared left-side flex div | `justify-content: space-between` on header pushes ungrouped buttons into the middle gap |
+| prev/next date sync | Read `getDate()` after `prev()`/`next()` and dispatch SET_DATE | FC handles step size per view automatically; reading back keeps context fetch window correct |
 
 ---
 
@@ -908,17 +982,15 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - Phase 3: DONE
 - Phase 4: DONE
 - Phase 5: DONE
-- Phase 6: IN PROGRESS (6.1 done, 6.2 done, 6.3 done, 6.4 partially done)
+- Phase 6: IN PROGRESS (6.1 done, 6.2 done, 6.3 done, 6.4 done, 6.5 not started)
 
 ### Immediate Next Steps
 
-Phase 6.4 (in progress):
-- [ ] `T` button to jump to Today/This Week
-- [ ] Left/right navigation buttons to move to the next day/week
-
-Phase 6.5 (not started):
+Phase 6.5:
 - [ ] Main timezone picker
 - [ ] Loading / success / error states in UI
+
+Phase 7 (Publish Prep) — after 6.5 complete.
 
 ### Deferred Optimisations (do not start until core functionality complete)
 - **Targeted single-calendar refetch** — instead of full `fetchAllRef` after a write, only refetch events for the specific `calendarId` that changed. Cuts N requests down to 1-2. Reduces flash. Requires pulling `getEvents` into a standalone function that merges results back into `state.events` by `calendarId`.
