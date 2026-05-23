@@ -96,8 +96,10 @@ export class GoogleCalendarAPI {
 		);
 
 		if (!response.ok) {
+			const err = await response.json();
 			throw new Error(
-				`Failed to fetch calendar list for ${account.accountId}: ${response.statusText}`,
+				err.error?.message ??
+					`Failed to fetch calendar list for ${account.accountId}`,
 			);
 		}
 
@@ -178,8 +180,10 @@ export class GoogleCalendarAPI {
 		);
 
 		if (!response.ok) {
+			const err = await response.json();
 			throw new Error(
-				`Failed to fetch events for ${calendarId}: ${response.statusText}`,
+				err.error?.message ??
+					`Failed to fetch events for ${calendarId}`,
 			);
 		}
 
@@ -231,12 +235,30 @@ export class GoogleCalendarAPI {
 		const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${eventId}?sendUpdates=all`;
 
 		const startField = updates.allDay
-  		? { date: updates.start }
-  		: { dateTime: updates.start, ...(updates.recurrence ? { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone } : {}) };
+			? { date: updates.start }
+			: {
+					dateTime: updates.start,
+					...(updates.recurrence
+						? {
+								timeZone:
+									Intl.DateTimeFormat().resolvedOptions()
+										.timeZone,
+							}
+						: {}),
+				};
 
 		const endField = updates.allDay
-		? { date: updates.end }
-		: { dateTime: updates.end, ...(updates.recurrence ? { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone } : {}) };
+			? { date: updates.end }
+			: {
+					dateTime: updates.end,
+					...(updates.recurrence
+						? {
+								timeZone:
+									Intl.DateTimeFormat().resolvedOptions()
+										.timeZone,
+							}
+						: {}),
+				};
 
 		const response = await this.putWithAuth(account, url, {
 			summary: updates.title,
@@ -248,7 +270,9 @@ export class GoogleCalendarAPI {
 			...(updates.description !== undefined
 				? { description: updates.description }
 				: {}),
-			...(updates.recurrence !== undefined ? { recurrence: updates.recurrence } : {}),
+			...(updates.recurrence !== undefined
+				? { recurrence: updates.recurrence }
+				: {}),
 		});
 
 		if (!response.ok) {
