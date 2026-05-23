@@ -62,6 +62,7 @@ export class TokenStore {
 			clientId: "",
 			clientSecret: "",
 			viewDensity: "compact",
+			activeView: "week",
 		};
 	}
 }

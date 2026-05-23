@@ -64,6 +64,10 @@ export default function CalendarPanel({ plugin }: Props) {
   const [toast, setToast] = useState<{ message: string; type: "loading" | "success" | "error" } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [activeView, setActiveView] = useState<"day" | "3day" | "week">(
+    plugin.data.activeView ?? "week"
+  );
+
   const showToast = (message: string, type: "loading" | "success" | "error", autoDismissMs?: number) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ message, type });
@@ -110,7 +114,7 @@ export default function CalendarPanel({ plugin }: Props) {
 
       dispatch({ type: "SET_CALENDARS", payload: merged });
 
-      const { timeMin, timeMax } = getViewWindow(state.selectedDate, state.activeView);
+      const { timeMin, timeMax } = getViewWindow(state.selectedDate, activeView);
 
       const allEvents = (
         await Promise.all(
@@ -135,7 +139,7 @@ export default function CalendarPanel({ plugin }: Props) {
 
   useEffect(() => {
     fetchAllRef.current?.();
-  }, [state.selectedDate, state.activeView]);
+  }, [state.selectedDate, activeView]);
 
   useEffect(() => {
     const interval = setInterval(() => fetchAllRef.current?.(), 5 * 60 * 1000);
@@ -166,6 +170,11 @@ export default function CalendarPanel({ plugin }: Props) {
     plugin.data.viewDensity = density;
     plugin.saveData(plugin.data);
   }, [density]);
+
+  useEffect(() => {
+    plugin.data.activeView = activeView;
+    plugin.saveData(plugin.data);
+  }, [activeView]);
 
   const handleDateSelect = (date: Date) => {
     dispatch({ type: "SET_DATE", payload: date });
@@ -270,10 +279,10 @@ export default function CalendarPanel({ plugin }: Props) {
             <button
               key={v}
               onClick={() => {
-                dispatch({ type: "SET_VIEW", payload: v });
+                setActiveView(v);
                 calendarRef.current?.getApi().changeView(VIEW_MAP[v]);
               }}
-              className={`gcal-panel-btn-view${state.activeView === v ? " gcal-panel-btn-view--active" : ""}`}
+              className={`gcal-panel-btn-view${activeView === v ? " gcal-panel-btn-view--active" : ""}`}
             >
               {v === "day" ? "D" : v === "3day" ? "3D" : "W"}
             </button>
@@ -287,7 +296,7 @@ export default function CalendarPanel({ plugin }: Props) {
           slotLabelInterval={density === "large" ? "00:30:00" : "01:00:00"}
           ref={calendarRef}
           plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
-          initialView={VIEW_MAP[state.activeView]}
+          initialView={VIEW_MAP[activeView]}
           height="100%"
           events={fcEvents}
           locale={enAU}

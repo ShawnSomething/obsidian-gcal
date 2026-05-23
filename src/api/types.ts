@@ -12,6 +12,7 @@ export interface PluginData {
 	clientId: string;
 	clientSecret: string;
 	viewDensity: ViewDensity;
+	activeView?: "day" | "3day" | "week";
 }
 
 export type ViewDensity = "compact" | "medium" | "large";
