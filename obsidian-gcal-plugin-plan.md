@@ -840,15 +840,28 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 
   6.6 Misc
   - [ ] Add main timezone picker (DECIDED: not needed — device timezone is used throughout)
+  - [x] Active view button restyling
 
 
 ### Phase 7 — Publish Prep
-- [ ] Polish event updating, creating, and deleting speeds
-- [ ] Error handling + user-facing messages for all failure cases
-- [ ] Easier authentication method for multiple accounts, do not require GCP setup
-- [ ] README with GCP setup guide
-- [ ] GitHub releases (`main.js`, `manifest.json`, `styles.css`)
-- [ ] PR to `obsidian/obsidian-releases`
+
+  7.1 Performance ✅ DONE
+  - [x] **Grid line opacity** — reduce calendar grid line opacity via CSS. Target `.fc-timegrid-slot` border and `.fc-scrollgrid` lines — likely using `--background-modifier-border` with lower alpha.
+  - [x] **Optimistic updates** — API methods (putEvent, patchEventTimes, patchAttendeeResponse, postEvent) now return `Promise<CalEvent>`. CalendarPanel dispatches UPDATE_EVENT / ADD_EVENT / REMOVE_EVENT from the response body. fetchAllRef removed from all single-event write paths. splitRecurringSeries and deleteRecurringAndFollowing still refetch (multi-step ops, response body doesn't represent final state). 800ms POST delay removed.
+  - [x] **Parallel fetches** — already implemented via `Promise.all` on per-calendar `getEvents` calls. Confirmed no change needed.
+   - [ ] Add repeat button to my calendar events on event modal, so I can set an event to repeat after I create a single no-recurring instance 
+  
+
+  7.2 Robustness
+  - [ ] Error handling + user-facing messages for all failure cases
+
+  7.3 Auth
+  - [ ] Easier authentication method for multiple accounts, do not require GCP setup
+
+  7.4 Release
+  - [ ] README with GCP setup guide
+  - [ ] GitHub releases (`main.js`, `manifest.json`, `styles.css`)
+  - [ ] PR to `obsidian/obsidian-releases`
 
 ---
 
@@ -866,7 +879,7 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | FullCalendar 0-height render | Flex column layout — header flexShrink:0, FC wrapper flex:1 |
 | Plugin store review | `isDesktopOnly: true`, no remote code, no data collection |
 | Timezone in EventModal | datetime-local has no tz awareness — use toLocalInput() for display, new Date().toISOString() on save |
-| Google API stale reads after write | Always refetch after writes; flash is acceptable trade-off over stale UI |
+| Google API stale reads after write | Single-event writes use response body directly (no GET). Multi-step ops (splitRecurringSeries, deleteRecurringAndFollowing) still refetch — response from step 1 doesn't represent final state. |
 | FullCalendar controlled/uncontrolled conflict | Memoize `fcEvents` with useMemo + use calendarRef.getApi() to mutate FC events directly |
 | Read-only calendars in create dropdown | Filter by `accessRole === "owner" \|\| "writer"` |
 | splitRecurringSeries instance override ghost | Explicitly DELETE original instance (Step 1.5) before POSTing new series |
@@ -881,7 +894,7 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | FullCalendar width on panel resize | FC doesn't listen for container resizes — use ResizeObserver + 50ms setTimeout before calling `updateSize()`. Do NOT use `calendarRef.current.el` — type doesn't expose it. Observe the wrapper div via a separate `calendarWrapperRef` instead. |
 | FC slot height | Controlled via CSS on `.fc-timegrid-slot`, not a FC prop. Apply density class to wrapper div and target via `.gcal-density-{mode} .fc-timegrid-slot`. |
 | FC drag-to-create ghost persisting | Do NOT use `selectMirror={true}` — it renders a ghost on first interaction that never clears. Use `selectable={true}` only, and call `calendarRef.current?.getApi().unselect()` at top of `select` callback. |
-| Google POST propagation delay | After `postEvent`, add 800ms delay before refetch — Google returns 200 but event is not immediately available on GET. |
+| Google POST propagation delay | No longer relevant — postEvent now returns the created CalEvent from the response body. ADD_EVENT dispatch used directly. 800ms delay removed. |
 | MiniMonth day cell sizing | Do NOT use `aspect-ratio: 1` on day cells — unreliable in Electron/Obsidian. Use explicit `width: 28px; height: 28px` instead. |
 | MiniMonth popover width | Must be at least 240px — 220px clips the Sunday column due to 7 × 28px cells + gaps. |
 | Editing outer container class | Never change the root return div's className when adding a child feature. Changing `gcal-panel-container` to `gcal-panel-header` broke the entire layout. Only touch what the task requires. |
@@ -922,7 +935,10 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | RecurringModal state pattern | Promise-based askRecurring in CalendarPanel | Single state location, clean callers — both eventDrop and EventModal await the same function |
 | askRecurring opts param | Optional second arg `{ title?, hideFollowing?, showAll? }` | Allows same function to serve both edit and RSVP contexts without duplicating modal state |
 | Styles | All styles in styles.css using gcal- prefixed classes | No inline styles — shared classes (gcal-modal-backdrop, gcal-input, etc.) reused across components |
-| Post-write state sync | Full refetch via `fetchAllRef.current?.()` after every write | Google API can return stale data on immediate GET — optimistic updates risk UI drifting from actual Google state. Flash on refetch is acceptable. Targeted single-calendar refetch is a future optimisation (deferred). |
+| Post-write state sync | Response body for single-event ops; full refetch for multi-step ops | Single-event PATCH/PUT/POST return the updated event — use it directly. splitRecurringSeries and deleteRecurringAndFollowing are multi-step; response from step 1 doesn't represent final state, refetch required. |
+| ADD_EVENT / REMOVE_EVENT actions | Added to CalendarContext reducer | CREATE uses ADD_EVENT with response body. DELETE uses REMOVE_EVENT by ID. No refetch needed for either. |
+| mapItem helper | Private method in GoogleCalendarAPI.ts | Removes duplicated Google API → CalEvent mapping across getEvents, postEvent, putEvent, patchEventTimes, patchAttendeeResponse. |
+| API method return types | postEvent, patchEventTimes, putEvent, patchAttendeeResponse return `Promise<CalEvent>` | Required to use response body for state update without a second GET call. |
 | FullCalendar event updates | calendarRef mutation (getEventById + setProp/setStart/setEnd) + UPDATE_EVENT dispatch | events prop re-render causes duplicates — ref mutation is the only safe way to visually update a FC event without remounting the event source |
 | fcEvents memoization | useMemo keyed on [state.events, state.calendars] | Inline computation produces new array reference every render — FC treats each new reference as a new event source |
 | splitRecurringSeries UNTIL source | Use `instance.start`, not `updates.start` | UNTIL must reflect the original occurrence time the master series knows about, not the user's edited time |
@@ -983,16 +999,12 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - Phase 4: DONE
 - Phase 5: DONE
 - Phase 6: DONE (6.1, 6.2, 6.3, 6.4, 6.5 all complete)
+- Phase 7.1: DONE (grid line opacity, optimistic updates, parallel fetches confirmed)
 
 ### Immediate Next Steps
 
 Phase 7 — Publish Prep:
-- [ ] Polish event updating, creating, and deleting speeds
-- [ ] Error handling + user-facing messages for all failure cases
-- [ ] Easier authentication method for multiple accounts, do not require GCP setup
-- [ ] README with GCP setup guide
-- [ ] GitHub releases (`main.js`, `manifest.json`, `styles.css`)
-- [ ] PR to `obsidian/obsidian-releases`
+- [ ] 7.1 Parallel Fetches
 
 ### Deferred Optimisations (do not start until core functionality complete)
-- **Targeted single-calendar refetch** — instead of full `fetchAllRef` after a write, only refetch events for the specific `calendarId` that changed. Cuts N requests down to 1-2. Reduces flash. Requires pulling `getEvents` into a standalone function that merges results back into `state.events` by `calendarId`.
+- **Targeted single-calendar refetch** — after splitRecurringSeries / deleteRecurringAndFollowing, only refetch events for the specific `calendarId` that changed instead of all calendars. Cuts N requests down to 1-2. Requires pulling `getEvents` into a standalone function that merges results back into `state.events` by `calendarId`.
