@@ -66,7 +66,7 @@ Only change what the task requires. Do not touch surrounding code, outer divs, o
 | Calendar API | Google Calendar REST API v3 | Direct HTTP, no SDK bloat |
 | Auth | OAuth 2.0 with PKCE | Desktop flow via local HTTP server |
 | Token storage | `plugin.saveData()` | Local only, never leaves device |
-| Build | esbuild | Obsidian plugin template standard |
+| Build | esbuild | Obsidian plugin standard |
 
 ### FullCalendar packages
 - @fullcalendar/core
@@ -743,6 +743,73 @@ this.addCommand({
 
 **State bridge:** Commands registered in `main.ts` can't directly call React state. Pattern: expose methods on the plugin class that the React tree wires up via a ref or callback registered on mount. Alternatively, dispatch a custom DOM event from `main.ts` and listen in `CalendarPanel.tsx`.
 
+### 5.19 Plugin Identity + Custom Icon
+
+**Plugin ID:** `gcal-sidebar` (set in `manifest.json`)
+**Display name:** `GCal Sidebar` (manifest + `CalendarView.getDisplayText()` + `SettingsTab` heading)
+
+**Custom icon — registered in `main.ts` via `addIcon()`:**
+```typescript
+import { Plugin, WorkspaceLeaf, addIcon } from "obsidian";
+
+const GCAL_ICON = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <rect x="10" y="22" width="80" height="68" rx="9" fill="none" stroke="currentColor" stroke-width="6"/>
+  <rect x="28" y="10" width="13" height="24" rx="6.5" fill="none" stroke="currentColor" stroke-width="5"/>
+  <rect x="59" y="10" width="13" height="24" rx="6.5" fill="none" stroke="currentColor" stroke-width="5"/>
+  <text x="10" y="91" font-size="33" font-weight="bold" fill="currentColor" font-family="Arial, sans-serif" letter-spacing="-1">GC</text>
+</svg>`;
+addIcon("gcal-icon", GCAL_ICON);
+```
+
+Call `addIcon()` at the top of `onload()`, before `addRibbonIcon`. Then reference `"gcal-icon"` in both:
+- `this.addRibbonIcon("gcal-icon", "GCal Sidebar", ...)`
+- `CalendarView.getIcon()` returning `"gcal-icon"`
+
+**`CalendarView.tsx` additions:**
+```typescript
+getDisplayText() { return "GCal Sidebar"; }
+getIcon() { return "gcal-icon"; }  // tab icon in sidebar
+```
+
+**Plugin folder name must match manifest `id`** — Obsidian uses the folder name as the plugin ID. Symlink folder must be named `gcal-sidebar`, not the old name.
+
+### 5.20 Auth Distribution — Decision & Rationale
+
+**Current approach: user-supplied GCP credentials. This is intentional and stays as-is for v1.**
+
+**How it works:**
+- Each user creates their own GCP project, OAuth Desktop App credentials, and enters their Client ID + Secret in plugin settings
+- Their tokens are stored locally in their Obsidian vault's `data.json`
+- All API calls go directly from their machine to Google — no third-party infrastructure involved
+- Multiple Google accounts are fully supported — each goes through the same consent flow and gets its own tokens
+
+**Why not bundle credentials:**
+- `main.js` is always public (required for Obsidian store). Any bundled Client ID or Secret is extractable from the minified JS regardless of repo visibility
+- PKCE protects the auth handshake — someone extracting the Client ID can't steal another user's tokens — but they can abuse your GCP quota
+- Google Calendar API quota: ~1M queries/day per GCP project. At ~1,150 calls/user/day (3 calendars, 5-min polling), quota exhausts at ~870 concurrent users
+- Abuse risk: bad actors could extract the Client ID and use your GCP quota for their own apps, or trigger revocation
+
+**Why not a proxy server:**
+- Requires permanent infrastructure (Cloudflare Worker, Vercel, etc.) that must stay online
+- Adds a new failure point — if server goes down, new auth and token refresh break for all users
+- Adds ongoing maintenance burden
+- Only justified at meaningful scale
+
+**Why not two code paths (bundled for normies, BYO for power users):**
+- Not needed. Verified vs unverified is a Google-side status only — the code is identical either way
+- Unverified users see a warning screen ("This app isn't verified"), click Advanced → Continue, and it works
+
+**Migration cost if approach changes later:**
+- Refresh tokens are tied to the Client ID they were issued for
+- Switching to bundled credentials would force all existing users to re-auth
+- Pain scales with user count — easiest to change before any users exist
+
+**Future path (post-publish, if traction warrants it):**
+- Apply for Google OAuth verification — eliminates the warning screen, no code change required
+- If scale demands it, build a minimal proxy (one Cloudflare Worker endpoint, ~50 lines) — but only if quota exhaustion becomes real
+
+**Code stays unchanged for Phase 8.** Phase 7.5 (auth simplification) is deferred indefinitely — it was predicated on bundling credentials, which is not happening.
+
 ---
 
 ## 6. Obsidian-Specific Patterns
@@ -765,13 +832,13 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 ### manifest.json
 ```json
 {
-  "id": "gcal-obsidian",
-  "name": "Google Calendar",
+  "id": "gcal-sidebar",
+  "name": "GCal Sidebar",
   "version": "1.0.0",
-  "minAppVersion": "1.4.0",
-  "description": "Interactive Google Calendar sidebar with multi-account support.",
-  "author": "Your Name",
-  "authorUrl": "https://github.com/yourhandle",
+  "minAppVersion": "0.15.0",
+  "description": "Interactive Google Calendar sidebar for Obsidian with multi-account support.",
+  "author": "ShawnSomething",
+  "authorUrl": "https://github.com/ShawnSomething",
   "isDesktopOnly": true
 }
 ```
@@ -782,10 +849,17 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 
 - Repo: `/Users/shawnkhoo/Documents/Code/obsidian-gcal/obsidian-gcal`
 - Test vault: `/Users/shawnkhoo/Documents/Code/obsidian-gcal/gcal-test`
-- Plugin symlinked into vault's `.obsidian/plugins/obsidian-gcal/`
+- Plugin symlinked into vault's `.obsidian/plugins/gcal-sidebar/`
 - `npm run dev` — watches and rebuilds on save
 - `npm run build` — one-shot production build
 - Hot-reload: not working due to symlink issue. Use `Cmd+P` → "Reload app without saving" manually.
+
+**Symlink setup (run once, after any folder rename):**
+```bash
+ln -s /path/to/obsidian-gcal/main.js /path/to/gcal-test/.obsidian/plugins/gcal-sidebar/main.js
+ln -s /path/to/obsidian-gcal/manifest.json /path/to/gcal-test/.obsidian/plugins/gcal-sidebar/manifest.json
+ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gcal-sidebar/styles.css
+```
 
 ---
 
@@ -898,7 +972,7 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
   - [x] Old `state.error` banner and `state.isLoading` loading div removed
   - [x] Timezone picker decided against — device timezone is sufficient, all code already anchors to device time
 
-  6.6 Misc
+  6.6 Misc ✅ DONE
   - [x] Active view button restyling
 
 ### Phase 7 — Publish Prep
@@ -923,26 +997,24 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
     - [x] Open/close behaviour — expands sidebar + reveals gcal leaf; collapses sidebar if gcal already active
     - **Bridge pattern:** `CommandBridge` interface on plugin class, registered by CalendarPanel on mount, nulled on unmount
 
-  7.4 Auth — Easier authentication (no GCP setup required) ← AFTER STORE PUBLISH
-  - **Decision:** Bundle plugin's own Client ID, ship PKCE flow, pursue Google OAuth verification post-publish.
-  - **Why not proxy:** Requires running infrastructure, privacy concerns, single point of failure.
-  - **Why not two flows:** Verified vs unverified is a Google-side status — code is identical. Unverified users see a warning screen ("This app isn't verified") and click through via Advanced → Continue. No code change when verification is granted.
-  - **Publish order:** Ship to Obsidian store first (unverified warning is acceptable), then apply for Google verification (privacy policy + domain required). Once verified, warning disappears automatically.
-  - **Code changes when doing this:**
-    - Remove Client ID / Client Secret input fields from `SettingsTab.ts`
-    - Remove `clientId` and `clientSecret` from `PluginData` interface in `types.ts`
-    - Remove `clientId` / `clientSecret` from `TokenStore.defaultData()`
-    - Hardcode Client ID as a constant in `OAuthManager.ts` (no secret needed for PKCE)
-    - `OAuthManager` constructor no longer takes credentials — reads hardcoded constant
-    - `main.ts` no longer calls `reloadCredentials()` on settings change (no credentials to reload)
-    - Settings tab becomes account list only (add/remove accounts, no credential fields)
-  - [ ] Remove credential fields from settings tab
-  - [ ] Hardcode Client ID in OAuthManager
-  - [ ] Clean up PluginData / TokenStore
-  - [ ] Apply for Google OAuth verification (external step, not code)
+  7.4 Plugin Identity ✅ DONE
+  - [x] Plugin renamed from "Sample Plugin" to "GCal Sidebar"
+  - [x] `manifest.json` updated — id: `gcal-sidebar`, name: `GCal Sidebar`, isDesktopOnly: true, description updated, author updated
+  - [x] Custom SVG calendar icon with "GC" text registered via `addIcon("gcal-icon", ...)` in `main.ts`
+  - [x] `CalendarView.getDisplayText()` returns `"GCal Sidebar"`
+  - [x] `CalendarView.getIcon()` returns `"gcal-icon"`
+  - [x] `SettingsTab` heading updated to "GCal Sidebar"
+  - [x] Ribbon icon updated to use `"gcal-icon"`
+  - [x] Plugin symlink folder renamed from `cbsidian-gcal` → `gcal-sidebar` to match manifest id
 
-### Phase 8 Release
-  - [ ] README with GCP setup guide (interim — until auth is simplified)
+  7.5 Auth Simplification ✅ DECIDED — DEFERRED INDEFINITELY
+  - **Decision: do not bundle credentials. Keep user-supplied GCP credentials as the only auth path.**
+  - Full rationale in section 5.20.
+  - Phase 7.5 tasks are cancelled. No code changes needed.
+  - Future path: apply for Google OAuth verification post-publish (eliminates warning screen, no code change). Build proxy only if quota exhaustion becomes real at scale.
+
+### Phase 8 — Release
+  - [ ] README with GCP setup guide
   - [ ] GitHub releases (`main.js`, `manifest.json`, `styles.css`)
   - [ ] PR to `obsidian/obsidian-releases`
 
@@ -952,9 +1024,8 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 
 | Risk | Mitigation |
 |---|---|
-| OAuth community distribution | Bundle own Client ID (PKCE, no secret). Apply for Google verification post-publish. Unverified warning is acceptable for early users. |
-| Unverified OAuth warning screen | Warn users in README — "You'll see a Google warning screen, click Advanced → Continue. This is expected until the app is verified." |
-| Bundled Client ID revocation | All users break if Google revokes. Low risk for small OSS plugin using PKCE. Mitigated long-term by getting verified. |
+| OAuth community distribution | User-supplied GCP credentials — no bundled credentials, no quota sharing, no abuse risk. See section 5.20 for full rationale. |
+| Unverified OAuth warning screen | Warn users in README — "You'll see a Google warning screen, click Advanced → Continue. This is expected." Apply for Google verification post-publish. |
 | API rate limits | 5-min polling is safe; exponential backoff on 429 |
 | `sendUpdates` defaulting to notify | Always pass `sendUpdates=none` on drags |
 | Recurring event complexity | Three cases mapped explicitly in section 5.8 |
@@ -978,7 +1049,7 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | Calendar visibility on reload | `state.calendars` is `[]` on init — merge logic must fall back to `plugin.data.calendarVisibility` before defaulting to API value. Guard `length === 0` in save effect prevents wiping record before data loads. |
 | FullCalendar width on panel resize | FC doesn't listen for container resizes — use ResizeObserver + 50ms setTimeout before calling `updateSize()`. Do NOT use `calendarRef.current.el` — type doesn't expose it. Observe the wrapper div via a separate `calendarWrapperRef` instead. |
 | FC slot height | Controlled via CSS on `.fc-timegrid-slot`, not a FC prop. Apply density class to wrapper div and target via `.gcal-density-{mode} .fc-timegrid-slot`. |
-| FC drag-to-create ghost persisting | Do NOT use `selectMirror={true}` — it renders a ghost on first interaction that never clears. Use `selectable={true}` only, and call `calendarRef.current?.getApi().unselect()` at top of `select` callback. |
+| FC drag-to-create ghost persisting | Do NOT use `selectMirror={true}` — it renders a ghost on first FC interaction that never clears. Use `selectable={true}` only, and call `calendarRef.current?.getApi().unselect()` at top of `select` callback. |
 | Google POST propagation delay | No longer relevant — postEvent now returns the created CalEvent from the response body. Non-recurring: ADD_EVENT dispatch used directly. Recurring: fetchCalendarRef used to pull all instances. |
 | MiniMonth day cell sizing | Do NOT use `aspect-ratio: 1` on day cells — unreliable in Electron/Obsidian. Use explicit `width: 28px; height: 28px` instead. |
 | MiniMonth popover width | Must be at least 240px — 220px clips the Sunday column due to 7 × 28px cells + gaps. |
@@ -991,6 +1062,11 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | EventModal repeat UI in edit mode — TypeScript narrowing | Do NOT hoist `(props as EditProps)` to a component-level variable to use in JSX conditions — it causes narrowing errors throughout the component. Use inline cast `(props as EditProps).event.recurringEventId` directly in the JSX condition. |
 | putEvent recurrence post-write state | PUT response only returns master event, not instances. Branch in CalendarPanel onSave: if `updates.recurrence?.length` → fetchCalendarRef; else → UPDATE_EVENT dispatch. |
 | Keyboard shortcut state bridge | Commands in `main.ts` cannot directly access React state. Use a `commandBridge` object registered on the plugin class by CalendarPanel on mount. |
+| Plugin folder name must match manifest id | Obsidian uses the plugin folder name as the plugin ID. If manifest `id` changes, rename the symlink folder to match. Mismatch = plugin silently fails to load. |
+| TokenStore.saveAccount() not updating plugin.data | `saveAccount()` and `removeAccount()` write to disk but must also update `plugin.data` in memory. Without this, CalendarPanel's visibility `useEffect` can write stale `plugin.data` back to disk and clobber newly added accounts. Fix: add `this.plugin.data = data` after `saveData()` in both methods. |
+| Second account disappears after auth | Root cause: `TokenStore.saveAccount()` wasn't updating `plugin.data` in memory. CalendarPanel's `useEffect` watching `state.calendars` writes `plugin.data` back to disk — if `plugin.data` is stale (missing account 2), it clobbers the correctly-saved disk state. Only surfaced on fresh `data.json` (e.g. after plugin rename) because previously both accounts were already persisted from prior sessions. |
+| Auth credential extraction from main.js | main.js is always public. Any bundled Client ID or Secret is extractable from minified JS regardless of repo visibility. Decision: do not bundle credentials. Users supply their own. See section 5.20. |
+| Future auth migration forcing re-auth | Refresh tokens are tied to the Client ID they were issued for. Changing auth approach later forces all existing users to re-auth. Easiest to change before any users exist. |
 
 ---
 
@@ -1081,11 +1157,16 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | Repeat UI in edit mode — JSX narrowing | Inline cast `(props as EditProps).event.x` in JSX condition | Hoisting to a component-level variable breaks TypeScript narrowing throughout the rest of the component. Keep the local `const editProps = props as EditProps` inside handleSave only. |
 | putEvent recurrence — timeZone required | Include `timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone` in start/end when recurrence present | Google returns 400 "Missing timeZone" otherwise. Non-recurrence PUTs do not need it. |
 | putEvent recurrence — state sync | fetchCalendarRef when `updates.recurrence?.length`, else UPDATE_EVENT | PUT with recurrence only returns master. fetchCalendarRef pulls all instances. Same pattern as postEvent with recurrence. |
-| Auth distribution approach | Bundle own Client ID (PKCE, no secret) + pursue Google verification post-publish | Proxy requires infrastructure. Two-flows not needed — verified vs unverified is Google-side only. Unverified warning screen is acceptable for early users. |
-| Auth simplification timing | After Obsidian store publish | Plugin must be published first. Google verification requires a live, published app. |
+| Auth distribution approach | User-supplied GCP credentials — no bundled credentials | main.js is always public; bundled credentials are always extractable. Quota abuse and revocation risk not worth it for a small OSS plugin. See section 5.20. |
+| Auth simplification (Phase 7.5) | Cancelled — deferred indefinitely | Was predicated on bundling credentials, which was decided against. Settings tab stays as-is. |
+| Proxy server for auth | Rejected for v1 | Requires permanent infrastructure, adds failure point, only justified at meaningful scale. |
+| Google OAuth verification | Apply post-publish | Eliminates unverified warning screen. Requires live published app. No code change needed. |
 | Keyboard shortcut state bridge | `commandBridge` object on plugin class, registered by CalendarPanel on mount | Commands in main.ts can't access React state directly. Bridge pattern keeps main.ts clean and CalendarPanel in control of its own state. |
 | Keyboard shortcut open/close | Expand + revealLeaf when collapsed; collapse sidebar when gcal is already active tab | Detaching and reattaching the leaf caused double-press bug — leaf must stay alive permanently |
 | View shortcuts | Separate commands per view (day/3day/week), not a cycle | Separate commands map cleanly to hotkeys (1, 3, w); cycling requires a stateful toggle |
+| Plugin identity | id: `gcal-sidebar`, name: `GCal Sidebar` | Renamed from sample plugin template. Folder name must match manifest id exactly. |
+| Custom icon | SVG registered via `addIcon()` — calendar outline + "GC" text overlapping bottom border | Obsidian's built-in `calendar` icon is generic. Custom icon makes the plugin identifiable in the ribbon and sidebar tab. |
+| TokenStore memory sync | `this.plugin.data = data` after every `saveData()` in saveAccount/removeAccount | Without this, in-memory plugin.data goes stale. CalendarPanel's visibility useEffect writes plugin.data back to disk, clobbering accounts added after initial load. |
 
 ---
 
@@ -1103,13 +1184,20 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - Phase 7.1: DONE
 - Phase 7.2: DONE
 - Phase 7.3: DONE
+- Phase 7.4: DONE
+- Phase 7.5: CANCELLED — auth simplification deferred indefinitely (see section 5.20)
 
 ### Immediate Next Steps
 
-1. **Phase 7.4 — Auth simplification** (after store publish)
-   - Remove credential fields from settings tab
-   - Hardcode Client ID in OAuthManager
-   - Apply for Google OAuth verification
+1. **Phase 8 — Release**
+   - README with GCP setup guide (this is the first thing to write in the next thread)
+   - GitHub releases (`main.js`, `manifest.json`, `styles.css`)
+   - PR to `obsidian/obsidian-releases`
 
-2. **Phase 8 — Release**
-   - README, GitHub release, PR to obsidian-releases
+### README must cover
+- What the plugin does
+- Requirements (desktop only, GCP project needed)
+- GCP setup walkthrough — create project, enable Calendar API, create Desktop App OAuth credentials, register redirect URIs (42813–42817), copy Client ID + Secret
+- Plugin installation and setup
+- Warning about unverified OAuth screen ("click Advanced → Continue — this is expected")
+- Multi-account setup instructions
