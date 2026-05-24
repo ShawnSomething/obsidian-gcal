@@ -1020,6 +1020,10 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
   - [x] Repo made public before submission
   - [x] Default branch switched from `main` to `master` (all code was on `master`, `main` was the empty template)
 
+### Phase 9 - Post Release
+  - [ ] Add optional donation payment method at the top and bottom of the readme
+  - [ ] Add optional donation payment method at the bottom of the settings panel
+
 ---
 
 ## 10. Known Risks
