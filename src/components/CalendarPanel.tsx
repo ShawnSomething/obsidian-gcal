@@ -375,6 +375,7 @@ export default function CalendarPanel({ plugin }: Props) {
           nowIndicator={true}
           editable={true}
           selectable={true}
+          snapDuration="00:15:00"
           eventClassNames={(arg) => {
             const calEvent = arg.event.extendedProps.calEvent as CalEvent;
             return calEvent.selfResponseStatus === "needsAction"
