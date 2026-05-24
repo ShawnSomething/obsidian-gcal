@@ -261,11 +261,20 @@ export default function EventModal(props: Props) {
               onChange={e => setSelectedCalendarId(e.target.value)}
               className="gcal-calendar-select"
             >
-              {state.calendars
-                .filter(c => c.accessRole === "owner" || c.accessRole === "writer")
-                .map(cal => (
-                  <option key={cal.id} value={cal.id}>{cal.summary}</option>
-                ))}
+              {Object.entries(
+                state.calendars
+                  .filter(c => c.accessRole === "owner" || c.accessRole === "writer")
+                  .reduce((groups, cal) => {
+                    (groups[cal.accountId] ??= []).push(cal);
+                    return groups;
+                  }, {} as Record<string, typeof state.calendars>)
+              ).map(([accountEmail, cals]) => (
+                <optgroup key={accountEmail} label={accountEmail}>
+                  {cals.map(cal => (
+                    <option key={cal.id} value={cal.id}>{cal.summary}</option>
+                  ))}
+                </optgroup>
+              ))}
             </select>
           </div>
         )}
