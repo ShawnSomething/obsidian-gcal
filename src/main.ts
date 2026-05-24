@@ -122,10 +122,6 @@ export default class GCalPlugin extends Plugin {
 			name: "Google Calendar: Previous",
 			callback: () => this.commandBridge?.prev(),
 		});
-
-		this.app.workspace.onLayoutReady(() => {
-			this.activateView();
-		});
 	}
 
 	onunload() {
