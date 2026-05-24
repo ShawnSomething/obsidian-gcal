@@ -11,10 +11,14 @@
             "id": "15c8d250579361da",
             "type": "leaf",
             "state": {
-              "type": "graph",
-              "state": {},
-              "icon": "lucide-git-fork",
-              "title": "Graph view"
+              "type": "markdown",
+              "state": {
+                "file": "2026-05-24.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "2026-05-24"
             }
           }
         ]
@@ -166,8 +170,8 @@
             "state": {
               "type": "gcal-view",
               "state": {},
-              "icon": "lucide-file",
-              "title": "Google Calendar"
+              "icon": "gcal-icon",
+              "title": "GCal Sidebar"
             }
           }
         ],
@@ -186,11 +190,12 @@
       "templates:Insert template": false,
       "command-palette:Open command palette": false,
       "bases:Create new base": false,
-      "sample-plugin:Google Calendar": false
+      "gcal-sidebar:GCal Sidebar": false
     }
   },
-  "active": "15c8d250579361da",
+  "active": "244c78f1b69b0e28",
   "lastOpenFiles": [
+    "2026-05-24.md",
     "Welcome.md",
     "Untitled.base"
   ]

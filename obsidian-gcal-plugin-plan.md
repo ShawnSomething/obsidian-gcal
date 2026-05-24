@@ -914,14 +914,16 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
   7.2 Robustness ✅ DONE
   - [x] Error handling + user-facing messages for all failure cases
 
-  7.5 Keyboard Shortcuts ← NEXT
-  - [ ] Open calendar leaf — `this.addCommand()` in `main.ts`
-  - [ ] Toggle active view (D / 3D / W) — cycles, dispatches SET_VIEW + calls FC `changeView`
-  - [ ] Jump to today — dispatches SET_DATE + `gotoDate(new Date())`
-  - [ ] Refresh — calls `fetchAllRef.current?.()`
-  - **Bridge pattern:** Commands live in `main.ts` but need to call React state. Expose a `commandBridge` ref on the plugin class, registered by CalendarPanel on mount. CalendarPanel sets `plugin.commandBridge = { toggleView, goToToday, refresh }`. main.ts commands call through the bridge.
+  7.3 Keyboard Shortcuts ✅ DONE
+    - [x] Open calendar leaf — `this.addCommand()` in `main.ts`
+    - [x] Toggle active view — Day / 3-day / Week as separate commands (not cycling)
+    - [x] Jump to today
+    - [x] Refresh
+    - [x] Next / Previous navigation
+    - [x] Open/close behaviour — expands sidebar + reveals gcal leaf; collapses sidebar if gcal already active
+    - **Bridge pattern:** `CommandBridge` interface on plugin class, registered by CalendarPanel on mount, nulled on unmount
 
-  7.3 Auth — Easier authentication (no GCP setup required) ← AFTER STORE PUBLISH
+  7.4 Auth — Easier authentication (no GCP setup required) ← AFTER STORE PUBLISH
   - **Decision:** Bundle plugin's own Client ID, ship PKCE flow, pursue Google OAuth verification post-publish.
   - **Why not proxy:** Requires running infrastructure, privacy concerns, single point of failure.
   - **Why not two flows:** Verified vs unverified is a Google-side status — code is identical. Unverified users see a warning screen ("This app isn't verified") and click through via Advanced → Continue. No code change when verification is granted.
@@ -1082,6 +1084,8 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 | Auth distribution approach | Bundle own Client ID (PKCE, no secret) + pursue Google verification post-publish | Proxy requires infrastructure. Two-flows not needed — verified vs unverified is Google-side only. Unverified warning screen is acceptable for early users. |
 | Auth simplification timing | After Obsidian store publish | Plugin must be published first. Google verification requires a live, published app. |
 | Keyboard shortcut state bridge | `commandBridge` object on plugin class, registered by CalendarPanel on mount | Commands in main.ts can't access React state directly. Bridge pattern keeps main.ts clean and CalendarPanel in control of its own state. |
+| Keyboard shortcut open/close | Expand + revealLeaf when collapsed; collapse sidebar when gcal is already active tab | Detaching and reattaching the leaf caused double-press bug — leaf must stay alive permanently |
+| View shortcuts | Separate commands per view (day/3day/week), not a cycle | Separate commands map cleanly to hotkeys (1, 3, w); cycling requires a stateful toggle |
 
 ---
 
@@ -1098,18 +1102,14 @@ Extend `PluginSettingTab`. Register in `main.ts` via `this.addSettingTab(...)`.
 - Phase 6: DONE (6.1, 6.2, 6.3, 6.4, 6.5 all complete)
 - Phase 7.1: DONE
 - Phase 7.2: DONE
+- Phase 7.3: DONE
 
 ### Immediate Next Steps
 
-1. **Phase 7.5 — Keyboard shortcuts** (current)
-   - Register commands in `main.ts` via `this.addCommand()`
-   - Bridge pattern: expose `commandBridge` on plugin class, CalendarPanel registers handlers on mount
-   - Commands: open leaf, toggle view, go to today, refresh
-
-2. **Phase 7.3 — Auth simplification** (after store publish)
+1. **Phase 7.4 — Auth simplification** (after store publish)
    - Remove credential fields from settings tab
    - Hardcode Client ID in OAuthManager
    - Apply for Google OAuth verification
 
-3. **Phase 8 — Release**
+2. **Phase 8 — Release**
    - README, GitHub release, PR to obsidian-releases

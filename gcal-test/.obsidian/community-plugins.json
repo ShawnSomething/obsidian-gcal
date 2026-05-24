@@ -1,4 +1,5 @@
 [
   "sample-plugin",
-  "hot-reload"
+  "hot-reload",
+  "gcal-sidebar"
 ]
