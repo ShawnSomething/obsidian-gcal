@@ -45,6 +45,7 @@ export class TokenStore {
 		account.accessToken = accessToken;
 		account.tokenExpiry = tokenExpiry;
 		await this.plugin.saveData(data);
+		this.plugin.data = data;
 	}
 
 	async saveClientCredentials(
