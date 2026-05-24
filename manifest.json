@@ -3,7 +3,7 @@
   "name": "GCal Sidebar",
   "version": "1.0.0",
   "minAppVersion": "0.15.0",
-  "description": "Interactive Google Calendar sidebar for Obsidian with multi-account support.",
+  "description": "Interactive Google Calendar sidebar with multi-account support.",
   "author": "ShawnSomething",
   "authorUrl": "https://github.com/ShawnSomething",
   "isDesktopOnly": true
