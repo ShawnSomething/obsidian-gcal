@@ -1013,10 +1013,12 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
   - Phase 7.5 tasks are cancelled. No code changes needed.
   - Future path: apply for Google OAuth verification post-publish (eliminates warning screen, no code change). Build proxy only if quota exhaustion becomes real at scale.
 
-### Phase 8 — Release
+### Phase 8 — Release ✅ DONE
   - [x] README with GCP setup guide — screenshots in `assets/` folder at repo root, referenced as `assets/image.png`
-  - [ ] GitHub releases (`main.js`, `manifest.json`, `styles.css`)
-  - [ ] PR to `obsidian/obsidian-releases`
+  - [x] GitHub release created — tag `1.0.0` on `master`, attached `main.js`, `manifest.json`, `styles.css` as release assets
+  - [x] Submitted to Obsidian Community via new developer dashboard at `community.obsidian.md` — automated review in progress
+  - [x] Repo made public before submission
+  - [x] Default branch switched from `main` to `master` (all code was on `master`, `main` was the empty template)
 
 ---
 
@@ -1067,6 +1069,9 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 | Second account disappears after auth | Root cause: `TokenStore.saveAccount()` wasn't updating `plugin.data` in memory. CalendarPanel's `useEffect` watching `state.calendars` writes `plugin.data` back to disk — if `plugin.data` is stale (missing account 2), it clobbers the correctly-saved disk state. Only surfaced on fresh `data.json` (e.g. after plugin rename) because previously both accounts were already persisted from prior sessions. |
 | GCP consent screen not published | Tell users to publish in README — Testing mode blocks all accounts except project owner | Desktop app type, any port on localhost is automatically allowed — no redirect URI registration needed |
 | Future auth migration forcing re-auth | Refresh tokens are tied to the Client ID they were issued for. Changing auth approach later forces all existing users to re-auth. Easiest to change before any users exist. |
+| obsidian-releases PR no longer accepted | Submit via `community.obsidian.md` developer dashboard instead | Obsidian migrated to automated review system in 2026. The obsidian-releases repo disabled PR creation. |
+| Default branch must contain manifest.json | Obsidian validator reads default branch only | If code is on `master` but default is `main` (empty), validator fails with "Could not find manifest.json". Fix: switch default branch in GitHub Settings → General. |
+| Old template tag blocks release tagging | Delete old `1.0.0` tag before retagging: `git tag -d 1.0.0` then `git push origin --delete 1.0.0` | Obsidian sample plugin template ships with a `1.0.0` tag on an old commit — must clear it first. |
 
 ---
 
@@ -1168,7 +1173,11 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 | Custom icon | SVG registered via `addIcon()` — calendar outline + "GC" text overlapping bottom border | Obsidian's built-in `calendar` icon is generic. Custom icon makes the plugin identifiable in the ribbon and sidebar tab. |
 | README assets | `assets/` folder at repo root, referenced as `assets/image.png` | GitHub renders relative paths from repo root — this is the standard convention for Obsidian plugins |
 | GCP redirect URIs | Not needed for Desktop app type | Google automatically allows `http://localhost` on any port for Desktop app credentials. Redirect URI registration is only required for Web application type. |
-| GCP consent screen status | Publish the app (Testing → Production) | Testing mode only allows the project owner's email + explicitly listed test users. Publishing lets any Google account authenticate. The unverified warning shows regardless of status — publishing does not remove it. |
+| Obsidian plugin submission method | `community.obsidian.md` developer dashboard (not PR to obsidian-releases) | Obsidian replaced the manual PR process in 2026 with an automated review system. obsidian-releases repo no longer accepts PRs. |
+| GitHub release assets | Manually attach `main.js`, `manifest.json`, `styles.css` to release | GitHub does not auto-attach build output — must drag-drop or upload manually. Obsidian pulls these files directly from the release, not from repo source. |
+| Git tag for release | Delete old template tag before retagging — `git tag -d 1.0.0` then `git push origin --delete 1.0.0` | Obsidian sample plugin template ships with a `1.0.0` tag on an old commit. Must delete locally and remotely before tagging your own release. |
+| Default branch | `master` not `main` — switch in GitHub Settings → General → Default branch | All code was committed to `master`. `main` was the empty template. Obsidian's validator reads the default branch for `manifest.json`. |
+| Repo visibility | Must be public before submitting to Obsidian Community | Automated review scans source code. Obsidian app also pulls `manifest.json` and `README.md` directly from the public repo. |
 
 ---
 
@@ -1188,15 +1197,22 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 - Phase 7.3: DONE
 - Phase 7.4: DONE
 - Phase 7.5: CANCELLED — auth simplification deferred indefinitely (see section 5.20)
-- Phase 8: IN PROGRESS — README done, GitHub release and obsidian-releases PR remaining
+- Phase 8: DONE — plugin submitted to Obsidian Community, automated review in progress
 
 ### Immediate Next Steps
 
-1. **Phase 8 — Release (remaining)**
-   - Create GitHub release — attach `main.js`, `manifest.json`, `styles.css`
-   - Submit PR to `obsidian/obsidian-releases`
+1. **Monitor automated review** at `https://community.obsidian.md` — check submission status
+2. **Fix any review failures** flagged by Obsidian's automated scanner
+3. Once approved, plugin will be live in Obsidian community browser within 24 hours
 
 ### README notes
 - README lives at repo root
 - Screenshots live in `assets/` at repo root, referenced as `assets/image.png` in markdown
 - Keyboard shortcuts table left with "none" defaults — all remappable by user in Settings → Hotkeys
+
+### Release notes
+- GitHub release tag: `1.0.0` on `master` branch
+- Release assets: `main.js`, `manifest.json`, `styles.css`
+- Obsidian submission: via `community.obsidian.md` developer dashboard (new system as of 2026 — no PR to obsidian-releases required)
+- Repo is public: `https://github.com/ShawnSomething/obsidian-gcal`
+- Default branch: `master` (not `main` — main was the empty template, all code is on master)
