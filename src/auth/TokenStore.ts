@@ -24,12 +24,14 @@ export class TokenStore {
 			data.accounts.push(account);
 		}
 		await this.plugin.saveData(data);
+		this.plugin.data = data;
 	}
 
 	async removeAccount(accountId: string): Promise<void> {
 		const data = await this.load();
 		data.accounts = data.accounts.filter((a) => a.accountId !== accountId);
 		await this.plugin.saveData(data);
+		this.plugin.data = data;
 	}
 
 	async updateTokens(
