@@ -1,11 +1,10 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
-	"version": "1.0.0",
-	"minAppVersion": "0.15.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
-	"isDesktopOnly": false
+  "id": "gcal-sidebar",
+  "name": "GCal Sidebar",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Interactive Google Calendar sidebar for Obsidian with multi-account support.",
+  "author": "ShawnSomething",
+  "authorUrl": "https://github.com/ShawnSomething",
+  "isDesktopOnly": true
 }

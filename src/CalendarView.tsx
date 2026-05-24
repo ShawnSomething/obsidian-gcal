@@ -16,7 +16,8 @@ export class CalendarView extends ItemView {
 	}
 
 	getViewType() { return VIEW_TYPE; }
-	getDisplayText() { return "Google Calendar"; }
+	getDisplayText() { return "GCal Sidebar"; }
+	getIcon() { return "gcal-icon"; }
 
 	async onOpen() {
 		const container = this.containerEl.children[1];

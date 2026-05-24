@@ -17,7 +17,7 @@ export class SettingsTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl("h2", { text: "Google Calendar" });
+		containerEl.createEl("h2", { text: "GCal Sidebar" });
 
 		// --- Client Credentials ---
 		containerEl.createEl("h3", { text: "Google Cloud Credentials" });

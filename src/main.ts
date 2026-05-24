@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceLeaf } from "obsidian";
+import { Plugin, WorkspaceLeaf, addIcon } from "obsidian";
 import { CalendarView, VIEW_TYPE } from "./CalendarView";
 import { SettingsTab } from "./settings/SettingsTab";
 import { TokenStore } from "./auth/TokenStore";
@@ -20,6 +20,14 @@ export default class GCalPlugin extends Plugin {
 	commandBridge: CommandBridge | null = null;
 
 	async onload() {
+		const GCAL_ICON = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+		<rect x="10" y="22" width="80" height="68" rx="9" fill="none" stroke="currentColor" stroke-width="6"/>
+		<rect x="28" y="10" width="13" height="24" rx="6.5" fill="none" stroke="currentColor" stroke-width="5"/>
+		<rect x="59" y="10" width="13" height="24" rx="6.5" fill="none" stroke="currentColor" stroke-width="5"/>
+		<text x="10" y="91" font-size="33" font-weight="bold" fill="currentColor" font-family="Arial, sans-serif" letter-spacing="-1">GC</text>
+		</svg>`;
+		addIcon("gcal-icon", GCAL_ICON);
+
 		this.tokenStore = new TokenStore(this);
 		this.data = await this.tokenStore.load();
 
@@ -36,7 +44,7 @@ export default class GCalPlugin extends Plugin {
 
 		this.addSettingTab(new SettingsTab(this.app, this));
 
-		this.addRibbonIcon("calendar", "Google Calendar", () => {
+		this.addRibbonIcon("gcal-icon", "GCal Sidebar", () => {
 			this.activateView();
 		});
 
