@@ -1,7 +1,7 @@
 # Obsidian Google Calendar Plugin — PRD + Tech Design
 
 ## Status
-`In Progress` — Started May 2026
+`Complete` — Started May 2026
 
 ---
 
@@ -1014,7 +1014,7 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
   - Future path: apply for Google OAuth verification post-publish (eliminates warning screen, no code change). Build proxy only if quota exhaustion becomes real at scale.
 
 ### Phase 8 — Release
-  - [ ] README with GCP setup guide
+  - [x] README with GCP setup guide — screenshots in `assets/` folder at repo root, referenced as `assets/image.png`
   - [ ] GitHub releases (`main.js`, `manifest.json`, `styles.css`)
   - [ ] PR to `obsidian/obsidian-releases`
 
@@ -1065,7 +1065,7 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 | Plugin folder name must match manifest id | Obsidian uses the plugin folder name as the plugin ID. If manifest `id` changes, rename the symlink folder to match. Mismatch = plugin silently fails to load. |
 | TokenStore.saveAccount() not updating plugin.data | `saveAccount()` and `removeAccount()` write to disk but must also update `plugin.data` in memory. Without this, CalendarPanel's visibility `useEffect` can write stale `plugin.data` back to disk and clobber newly added accounts. Fix: add `this.plugin.data = data` after `saveData()` in both methods. |
 | Second account disappears after auth | Root cause: `TokenStore.saveAccount()` wasn't updating `plugin.data` in memory. CalendarPanel's `useEffect` watching `state.calendars` writes `plugin.data` back to disk — if `plugin.data` is stale (missing account 2), it clobbers the correctly-saved disk state. Only surfaced on fresh `data.json` (e.g. after plugin rename) because previously both accounts were already persisted from prior sessions. |
-| Auth credential extraction from main.js | main.js is always public. Any bundled Client ID or Secret is extractable from minified JS regardless of repo visibility. Decision: do not bundle credentials. Users supply their own. See section 5.20. |
+| GCP consent screen not published | Tell users to publish in README — Testing mode blocks all accounts except project owner | Desktop app type, any port on localhost is automatically allowed — no redirect URI registration needed |
 | Future auth migration forcing re-auth | Refresh tokens are tied to the Client ID they were issued for. Changing auth approach later forces all existing users to re-auth. Easiest to change before any users exist. |
 
 ---
@@ -1166,7 +1166,9 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 | View shortcuts | Separate commands per view (day/3day/week), not a cycle | Separate commands map cleanly to hotkeys (1, 3, w); cycling requires a stateful toggle |
 | Plugin identity | id: `gcal-sidebar`, name: `GCal Sidebar` | Renamed from sample plugin template. Folder name must match manifest id exactly. |
 | Custom icon | SVG registered via `addIcon()` — calendar outline + "GC" text overlapping bottom border | Obsidian's built-in `calendar` icon is generic. Custom icon makes the plugin identifiable in the ribbon and sidebar tab. |
-| TokenStore memory sync | `this.plugin.data = data` after every `saveData()` in saveAccount/removeAccount | Without this, in-memory plugin.data goes stale. CalendarPanel's visibility useEffect writes plugin.data back to disk, clobbering accounts added after initial load. |
+| README assets | `assets/` folder at repo root, referenced as `assets/image.png` | GitHub renders relative paths from repo root — this is the standard convention for Obsidian plugins |
+| GCP redirect URIs | Not needed for Desktop app type | Google automatically allows `http://localhost` on any port for Desktop app credentials. Redirect URI registration is only required for Web application type. |
+| GCP consent screen status | Publish the app (Testing → Production) | Testing mode only allows the project owner's email + explicitly listed test users. Publishing lets any Google account authenticate. The unverified warning shows regardless of status — publishing does not remove it. |
 
 ---
 
@@ -1186,18 +1188,15 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 - Phase 7.3: DONE
 - Phase 7.4: DONE
 - Phase 7.5: CANCELLED — auth simplification deferred indefinitely (see section 5.20)
+- Phase 8: IN PROGRESS — README done, GitHub release and obsidian-releases PR remaining
 
 ### Immediate Next Steps
 
-1. **Phase 8 — Release**
-   - README with GCP setup guide (this is the first thing to write in the next thread)
-   - GitHub releases (`main.js`, `manifest.json`, `styles.css`)
-   - PR to `obsidian/obsidian-releases`
+1. **Phase 8 — Release (remaining)**
+   - Create GitHub release — attach `main.js`, `manifest.json`, `styles.css`
+   - Submit PR to `obsidian/obsidian-releases`
 
-### README must cover
-- What the plugin does
-- Requirements (desktop only, GCP project needed)
-- GCP setup walkthrough — create project, enable Calendar API, create Desktop App OAuth credentials, register redirect URIs (42813–42817), copy Client ID + Secret
-- Plugin installation and setup
-- Warning about unverified OAuth screen ("click Advanced → Continue — this is expected")
-- Multi-account setup instructions
+### README notes
+- README lives at repo root
+- Screenshots live in `assets/` at repo root, referenced as `assets/image.png` in markdown
+- Keyboard shortcuts table left with "none" defaults — all remappable by user in Settings → Hotkeys
