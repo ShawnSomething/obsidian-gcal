@@ -1,90 +1,187 @@
-# Obsidian Sample Plugin
+# GCal Sidebar
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+An interactive Google Calendar sidebar for Obsidian. Multiple accounts, bi-directional sync, drag to move, accept/reject invites.
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+**Desktop only.**
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and output 'click' to the console.
-- Registers a global interval which logs 'setInterval' to the console.
+---
 
-## First time developing plugins?
+## Features
 
-Quick starting guide for new plugin devs:
+- Multiple Google accounts in one view
+- Day / 3-day / Week view with density toggle
+- Drag to move events
+- Create events by clicking or dragging an empty slot
+- Edit events (title, time, recurrence, guests, location, description)
+- Accept, decline, or mark tentative on invites
+- Recurring event support (this event / this and following / all events)
+- Mini month navigation
+- Calendar show/hide toggles per account
+- Keyboard shortcuts for common actions
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `main.ts` to `main.js`.
-- Make changes to `main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+---
 
-## Releasing new releases
+## Requirements
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+- Obsidian desktop (Windows, macOS, Linux)
+- A Google account
+- A Google Cloud project with the Calendar API enabled (free, takes ~5 minutes to set up)
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+---
 
-## Adding your plugin to the community plugin list
+# How to Setup
+## Google Cloud Setup
 
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
+You need your own GCP credentials. This keeps your tokens local to your machine and off any third-party server.
 
-## How to use
+### 1. Create a GCP project
 
-- Clone this repo.
-- Make sure your NodeJS is at least v16 (`node --version`).
-- `npm i` or `yarn` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
+1. Go to [console.cloud.google.com](https://console.cloud.google.com)
+2. Click the project selector at the top → **New Project**
+![alt text](assets/image.png)
+![alt text](assets/image-1.png)
+3. Name it anything (e.g. `obsidian-gcal-sidebar`) → **Create**
+    - No organisation is needed
 
-## Manually installing the plugin
+### 2. Enable the Google Calendar API
 
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
+1. In the left sidebar: **APIs & Services → Library**
+![alt text](assets/image-2.png)
+2. Search for **Google Calendar API**
+![alt text](assets/image-3.png)
+3. Click it → **Enable**
+![alt text](assets/image-4.png)
 
-## Improve code quality with eslint
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code. 
-- This project already has eslint preconfigured, you can invoke a check by running`npm run lint`
-- Together with a custom eslint [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidan specific code guidelines.
-- A GitHub action is preconfigured to automatically lint every commit on all branches.
+### 3. Create OAuth credentials
 
-## Funding URL
+1. **APIs & Services → Credentials → Create Credentials → OAuth client ID**
+![alt text](assets/image-5.png)
+2. If prompted to configure the consent screen first:
+   - User type: **External**
+   - Fill in App name (anything, e.g. `obsidian-gcal-sidebar`), your email for both support and developer contact fields
+   - Skip scopes, skip test users
+   - Save and continue back to credentials
+3. Application type: **Desktop app**
+4. Name it anything (e.g. `obsidian-gcal-sidebar`) → **Create**
+5. Copy the **Client ID** and **Client Secret** — you'll need both
 
-You can include funding URLs where people who use your plugin can financially support it.
+### 4. Publish the consent screen
 
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
+1. Go to APIs & Services → OAuth consent screen → Audience
+2. click Publish App
+![alt text](assets/image-6.png)
+3. Confirm
 
-```json
-{
-    "fundingUrl": "https://buymeacoffee.com"
-}
-```
+---
 
-If you have multiple URLs, you can also do:
+## Installation in Obsidian
 
-```json
-{
-    "fundingUrl": {
-        "Buy Me a Coffee": "https://buymeacoffee.com",
-        "GitHub Sponsor": "https://github.com/sponsors",
-        "Patreon": "https://www.patreon.com/"
-    }
-}
-```
+### From the Obsidian community plugin store
 
-## API Documentation
+1. **Settings → Community plugins → Browse**
+2. Search for **GCal Sidebar**
+3. Install → Enable
 
-See https://docs.obsidian.md
+### Manual install
+
+1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/ShawnSomething/obsidian-gcal/releases)
+2. Create a folder at `<your vault>/.obsidian/plugins/gcal-sidebar/`
+3. Drop the three files in
+4. **Settings → Community plugins** → enable **GCal Sidebar**
+
+---
+
+## Plugin Setup
+
+1. Open **Settings → GCal Sidebar**
+2. Paste your **Client ID** and **Client Secret** from the **Google Cloud Setup** before
+3. Click **Add Account**
+4. Your browser will open a Google sign-in page
+
+### The "This app isn't verified" screen
+
+You will see a Google warning. This is expected — the app is running under your own GCP project, which hasn't gone through Google's verification process.
+
+Click **Advanced → Go to [app name] (unsafe)** to continue. Your credentials stay on your device and are never sent or saved anywhere other than Google's own servers.
+
+5. Sign in and grant calendar access
+6. The browser will show a confirmation — you can close it
+7. The sidebar will open and load your calendars
+
+### Adding more accounts
+
+Repeat steps 3–7 for each additional Google account. All accounts appear in the same calendar view.
+
+---
+
+## Usage
+
+### Opening the sidebar
+
+Click the calendar icon in the left ribbon, or use the command palette: **GCal Sidebar: Open Google Calendar**.
+
+### Keyboard shortcuts
+
+Defaults — all remappable in **Settings → Hotkeys**.
+They are all set to none as a default, please feel free to set them up as you prefer
+
+| Action | Default |
+|---|---|
+| Open calendar | none (set one in Hotkeys) |
+| Day view | none |
+| 3-day view | none |
+| Week view | none |
+| Jump to today | none |
+| Refresh | none |
+| Previous | none |
+| Next | none |
+
+### Creating events
+
+Click an empty time slot to create a new event. Click and drag to set the duration. Fill in the details and save.
+
+### Editing events
+
+Click any event to open it. Edit title, time, guests, location, description, or recurrence.
+
+### Moving events
+
+Drag an event to a new time. Changes sync immediately.
+
+### Accepting / declining invites
+
+Click an event → use the **Yes / Maybe / No** buttons at the top of the modal.
+
+### Showing / hiding calendars
+
+Click the grid icon in the header to open the calendar list. Toggle any calendar on or off. Use the **↗** button next to an account to open it in Google Calendar.
+
+---
+
+## Data & Privacy
+
+- Tokens are stored locally in your vault's `data.json` file
+- Nothing is sent to any third-party server
+- All API calls go directly from your machine to Google
+
+---
+
+## Troubleshooting
+
+**Events not loading**
+Try the refresh button (↻) in the header. If that doesn't work, check that your Client ID and Secret are correct in settings.
+
+**"This app isn't verified" keeps showing**
+This is normal for self-hosted GCP projects. Just click Advanced -> Continue to proceed
+
+**Port already in use**
+The plugin tries ports 42813–42817 for the OAuth callback. If all five are blocked, the auth flow will fail. Free up one of those ports and try again.
+
+**Calendar stopped syncing**
+Your access token may have expired and failed to refresh. Remove and re-add the account in settings.
+
+---
+
+## License
+
+MIT
