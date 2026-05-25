@@ -24,31 +24,33 @@ export class SettingsTab extends PluginSettingTab {
 
 		const data = await this.tokenStore.load();
 
-		new Setting(containerEl)
-			.setName("Client ID")
-			.addText((text) =>
-				text
-					.setPlaceholder("your-client-id.apps.googleusercontent.com")
-					.setValue(data.clientId)
-					.onChange(async (value) => {
-						const fresh = await this.tokenStore.load();
-						await this.tokenStore.saveClientCredentials(value, fresh.clientSecret);
-						await this.plugin.reloadCredentials();
-					})
-			);
+		new Setting(containerEl).setName("Client ID").addText((text) =>
+			text
+				.setPlaceholder("your-client-id.apps.googleusercontent.com")
+				.setValue(data.clientId)
+				.onChange(async (value) => {
+					const fresh = await this.tokenStore.load();
+					await this.tokenStore.saveClientCredentials(
+						value,
+						fresh.clientSecret,
+					);
+					await this.plugin.reloadCredentials();
+				}),
+		);
 
-		new Setting(containerEl)
-			.setName("Client Secret")
-			.addText((text) =>
-				text
-					.setPlaceholder("GOCSPX-...")
-					.setValue(data.clientSecret)
-					.onChange(async (value) => {
-						const fresh = await this.tokenStore.load();
-						await this.tokenStore.saveClientCredentials(fresh.clientId, value);
-						await this.plugin.reloadCredentials();
-					})
-			);
+		new Setting(containerEl).setName("Client Secret").addText((text) =>
+			text
+				.setPlaceholder("GOCSPX-...")
+				.setValue(data.clientSecret)
+				.onChange(async (value) => {
+					const fresh = await this.tokenStore.load();
+					await this.tokenStore.saveClientCredentials(
+						fresh.clientId,
+						value,
+					);
+					await this.plugin.reloadCredentials();
+				}),
+		);
 
 		// --- Accounts ---
 		containerEl.createEl("h3", { text: "Connected Accounts" });
@@ -68,9 +70,11 @@ export class SettingsTab extends PluginSettingTab {
 							.setButtonText("Remove")
 							.setWarning()
 							.onClick(async () => {
-								await this.tokenStore.removeAccount(account.accountId);
+								await this.tokenStore.removeAccount(
+									account.accountId,
+								);
 								this.display();
-							})
+							}),
 					);
 			}
 		}
@@ -85,12 +89,17 @@ export class SettingsTab extends PluginSettingTab {
 					.onClick(async () => {
 						const freshData = await this.tokenStore.load();
 						if (!freshData.clientId || !freshData.clientSecret) {
-							new Notice("Enter your Client ID and Secret first.");
+							new Notice(
+								"Enter your Client ID and Secret first.",
+							);
 							return;
 						}
 
 						try {
-							const oauth = new OAuthManager(freshData.clientId, freshData.clientSecret);
+							const oauth = new OAuthManager(
+								freshData.clientId,
+								freshData.clientSecret,
+							);
 							const account = await oauth.authorizeNewAccount();
 							console.log("Account returned:", account);
 							await this.tokenStore.saveAccount(account);
@@ -101,7 +110,13 @@ export class SettingsTab extends PluginSettingTab {
 							console.error("Auth error:", err);
 							new Notice(`Auth failed: ${err.message}`);
 						}
-					})
+					}),
 			);
+
+		containerEl.createEl("div", { cls: "gcal-settings-kofi" }).innerHTML = `
+  <a href="https://ko-fi.com/shawnsomething" target="_blank">
+    <img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support on Ko-fi" />
+  </a>
+`;
 	}
 }

@@ -19,6 +19,8 @@ An interactive Google Calendar sidebar for Obsidian. Multiple accounts, bi-direc
 - Calendar show/hide toggles per account
 - Keyboard shortcuts for common actions
 
+[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/shawnsomething)
+
 ---
 
 ## Requirements
