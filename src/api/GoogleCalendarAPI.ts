@@ -313,6 +313,7 @@ export class GoogleCalendarAPI {
 			allDay: boolean;
 			location?: string;
 			description?: string;
+			recurrence?: string[];
 		},
 	): Promise<void> {
 		// Fetch master to get its current RRULE
@@ -388,7 +389,7 @@ export class GoogleCalendarAPI {
 						timeZone:
 							Intl.DateTimeFormat().resolvedOptions().timeZone,
 					},
-			recurrence: originalRecurrence, // new series inherits original RRULE, no UNTIL
+			recurrence: updates.recurrence ?? originalRecurrence,
 			attendees: instance.attendees,
 			...(updates.location ? { location: updates.location } : {}),
 			...(updates.description

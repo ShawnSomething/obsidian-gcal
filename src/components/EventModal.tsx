@@ -6,8 +6,8 @@ type EditProps = {
   mode: "edit";
   event: CalEvent;
   askRecurring: (event: CalEvent, opts?: { title?: string; hideThis?: boolean; hideFollowing?: boolean; showAll?: boolean }) => Promise<"this" | "following" | "all" | null>;
-  onSave: (updates: { title: string; start: string; end: string; allDay: boolean; location?: string; description?: string; recurrence?: string[] }) => Promise<void>;
-  onSplitSeries: (updates: { title: string; start: string; end: string; allDay: boolean; location?: string; description?: string }) => Promise<void>;
+  onSave: (updates: { title: string; start: string; end: string; allDay: boolean; location?: string; description?: string; recurrence?: string[]; targetEventId?: string }) => Promise<void>;
+  onSplitSeries: (updates: { title: string; start: string; end: string; allDay: boolean; location?: string; description?: string; recurrence?: string[] }) => Promise<void>;
   onDelete: () => void;
   onRespond?: (status: "accepted" | "declined" | "tentative") => void;
   onClose: () => void;
@@ -199,6 +199,10 @@ export default function EventModal(props: Props) {
           await editProps.onSplitSeries(updates);
           return;
         }
+        if (choice === "all") {
+          await editProps.onSave({ ...updates, targetEventId: editProps.event.recurringEventId });
+          return;
+        }
       } else if (editProps.event.recurrence?.length && updates.recurrence) {
         // editing RRULE on master event — ask all vs following
         const choice = await editProps.askRecurring(editProps.event, { hideThis: true, showAll: true });
@@ -331,8 +335,15 @@ export default function EventModal(props: Props) {
 
             {repeat && (
               <div className="gcal-recurrence-block">
-                <label className="gcal-field-label">
-                  Frequency
+                <div className="gcal-recurrence-row">
+                  <span className="gcal-recurrence-label">Every</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={interval}
+                    onChange={e => setIntervalVal(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="gcal-recurrence-interval"
+                  />
                   <select
                     value={frequency}
                     onChange={e => {
@@ -342,71 +353,68 @@ export default function EventModal(props: Props) {
                         setDays([getStartDay(start)]);
                       }
                     }}
-                    className="gcal-input"
+                    className="gcal-input gcal-recurrence-freq"
                   >
-                    <option value="DAILY">Daily</option>
-                    <option value="WEEKLY">Weekly</option>
-                    <option value="MONTHLY">Monthly</option>
-                    <option value="YEARLY">Yearly</option>
+                    <option value="DAILY">Day</option>
+                    <option value="WEEKLY">Week</option>
+                    <option value="MONTHLY">Month</option>
+                    <option value="YEARLY">Year</option>
                   </select>
-                </label>
-
-                <label className="gcal-field-label">
-                  Every
-                  <input
-                    type="number"
-                    min={1}
-                    value={interval}
-                    onChange={e => setIntervalVal(Math.max(1, parseInt(e.target.value) || 1))}
-                    className="gcal-input"
-                  />
-                </label>
+                </div>
 
                 {frequency === "WEEKLY" && (
-                  <div className="gcal-day-picker">
-                    {ALL_DAYS.map(day => (
-                      <button
-                        key={day}
-                        className={`gcal-day-btn${days.includes(day) ? " gcal-day-btn--active" : ""}`}
-                        onClick={() => toggleDay(day)}
-                      >
-                        {DAY_LABELS[day]}
-                      </button>
-                    ))}
+                  <div className="gcal-recurrence-row">
+                    <span className="gcal-recurrence-label">On</span>
+                    <div className="gcal-day-picker">
+                      {ALL_DAYS.map(day => (
+                        <button
+                          key={day}
+                          className={`gcal-day-btn${days.includes(day) ? " gcal-day-btn--active" : ""}`}
+                          onClick={() => toggleDay(day)}
+                        >
+                          {DAY_LABELS[day]}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
 
-                <label className="gcal-field-label">
-                  Ends
+                <div className="gcal-recurrence-row">
+                  <span className="gcal-recurrence-label">End</span>
                   <select
                     value={endType}
                     onChange={e => setEndType(e.target.value as "never" | "until" | "count")}
-                    className="gcal-input"
+                    className="gcal-input gcal-recurrence-freq"
                   >
                     <option value="never">Never</option>
                     <option value="until">On date</option>
                     <option value="count">After N occurrences</option>
                   </select>
-                </label>
+                </div>
 
                 {endType === "until" && (
-                  <label className="gcal-field-label">
-                    End date
-                    <input type="date" value={untilDate} onChange={e => setUntilDate(e.target.value)} className="gcal-input" />
-                  </label>
+                  <div className="gcal-recurrence-row">
+                    <span className="gcal-recurrence-label" />
+                    <input
+                      type="date"
+                      value={untilDate}
+                      onChange={e => setUntilDate(e.target.value)}
+                      className="gcal-input gcal-recurrence-freq"
+                    />
+                  </div>
                 )}
 
                 {endType === "count" && (
-                  <label className="gcal-field-label">
-                    Occurrences
+                  <div className="gcal-recurrence-row">
+                    <span className="gcal-recurrence-label" />
                     <input
                       type="number"
                       min={1}
                       value={countNum}
                       onChange={e => setCountNum(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="gcal-input"
+                      className="gcal-input gcal-recurrence-freq"
                     />
-                  </label>
+                  </div>
                 )}
               </div>
             )}
@@ -428,8 +436,15 @@ export default function EventModal(props: Props) {
 
             {repeat && (
               <div className="gcal-recurrence-block">
-                <label className="gcal-field-label">
-                  Frequency
+                <div className="gcal-recurrence-row">
+                  <span className="gcal-recurrence-label">Every</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={interval}
+                    onChange={e => setIntervalVal(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="gcal-recurrence-interval"
+                  />
                   <select
                     value={frequency}
                     onChange={e => {
@@ -439,76 +454,68 @@ export default function EventModal(props: Props) {
                         setDays([getStartDay(start)]);
                       }
                     }}
-                    className="gcal-input"
+                    className="gcal-input gcal-recurrence-freq"
                   >
-                    <option value="DAILY">Daily</option>
-                    <option value="WEEKLY">Weekly</option>
-                    <option value="MONTHLY">Monthly</option>
-                    <option value="YEARLY">Yearly</option>
+                    <option value="DAILY">Day</option>
+                    <option value="WEEKLY">Week</option>
+                    <option value="MONTHLY">Month</option>
+                    <option value="YEARLY">Year</option>
                   </select>
-                </label>
-
-                <label className="gcal-field-label">
-                  Every
-                  <input
-                    type="number"
-                    min={1}
-                    value={interval}
-                    onChange={e => setIntervalVal(Math.max(1, parseInt(e.target.value) || 1))}
-                    className="gcal-input"
-                  />
-                </label>
+                </div>
 
                 {frequency === "WEEKLY" && (
-                  <div className="gcal-day-picker">
-                    {ALL_DAYS.map(day => (
-                      <button
-                        key={day}
-                        className={`gcal-day-btn${days.includes(day) ? " gcal-day-btn--active" : ""}`}
-                        onClick={() => toggleDay(day)}
-                      >
-                        {DAY_LABELS[day]}
-                      </button>
-                    ))}
+                  <div className="gcal-recurrence-row">
+                    <span className="gcal-recurrence-label">On</span>
+                    <div className="gcal-day-picker">
+                      {ALL_DAYS.map(day => (
+                        <button
+                          key={day}
+                          className={`gcal-day-btn${days.includes(day) ? " gcal-day-btn--active" : ""}`}
+                          onClick={() => toggleDay(day)}
+                        >
+                          {DAY_LABELS[day]}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
 
-                <label className="gcal-field-label">
-                  Ends
+                <div className="gcal-recurrence-row">
+                  <span className="gcal-recurrence-label">End</span>
                   <select
                     value={endType}
                     onChange={e => setEndType(e.target.value as "never" | "until" | "count")}
-                    className="gcal-input"
+                    className="gcal-input gcal-recurrence-freq"
                   >
                     <option value="never">Never</option>
                     <option value="until">On date</option>
                     <option value="count">After N occurrences</option>
                   </select>
-                </label>
+                </div>
 
                 {endType === "until" && (
-                  <label className="gcal-field-label">
-                    End date
+                  <div className="gcal-recurrence-row">
+                    <span className="gcal-recurrence-label" />
                     <input
                       type="date"
                       value={untilDate}
                       onChange={e => setUntilDate(e.target.value)}
-                      className="gcal-input"
+                      className="gcal-input gcal-recurrence-freq"
                     />
-                  </label>
+                  </div>
                 )}
 
                 {endType === "count" && (
-                  <label className="gcal-field-label">
-                    Occurrences
+                  <div className="gcal-recurrence-row">
+                    <span className="gcal-recurrence-label" />
                     <input
                       type="number"
                       min={1}
                       value={countNum}
                       onChange={e => setCountNum(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="gcal-input"
+                      className="gcal-input gcal-recurrence-freq"
                     />
-                  </label>
+                  </div>
                 )}
               </div>
             )}

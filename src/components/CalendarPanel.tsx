@@ -606,7 +606,9 @@ export default function CalendarPanel({ plugin }: Props) {
             if (!account) return;
             showToast("Saving...", "loading");
             try {
-              const updated = await plugin.api.putEvent(account, editingEvent.calendarId, editingEvent.id, updates);
+              const { targetEventId, ...putUpdates } = updates;
+              const targetId = targetEventId ?? editingEvent.id;
+              const updated = await plugin.api.putEvent(account, editingEvent.calendarId, targetId, putUpdates);
               if (updates.recurrence?.length) {
                 await fetchCalendarRef.current?.(editingEvent.calendarId, editingEvent.accountId);
               } else {
