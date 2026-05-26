@@ -1318,3 +1318,77 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 - Obsidian submission: via `community.obsidian.md` developer dashboard (new system as of 2026 — no PR to obsidian-releases required)
 - Repo is public: `https://github.com/ShawnSomething/obsidian-gcal`
 - Default branch: `master` (not `main` — main was the empty template, all code is on master)
+---
+
+## 13. Post-Release Session — Recurring Edit Fixes (May 2026)
+
+### What was done
+
+**Repeat UI layout redesign (EventModal.tsx + styles.css)**
+- Changed recurrence block from stacked label/field layout to inline rows matching iOS Calendar UX
+- Row 1: `Every [n] [frequency dropdown]` — number + dropdown side by side
+- Row 2: `On [M][T][W][T][F][S][S]` — label + day buttons inline (weekly only)
+- Row 3: `End [Never dropdown]` — label + dropdown inline
+- Conditional date/count inputs appear as a 4th row when needed
+- Frequency option labels changed from "Daily/Weekly/Monthly/Yearly" → "Day/Week/Month/Year"
+- New CSS classes added to styles.css: `gcal-recurrence-row`, `gcal-recurrence-label`, `gcal-recurrence-interval`, `gcal-recurrence-freq`
+
+**Bug fix — "All events" 410 error (FIXED)**
+- Root cause: `handleSave` in EventModal when choice is "all" was falling through to `onSave(updates)` without a `return`. CalendarPanel's `onSave` always used `editingEvent.id` (instance ID). PUT to an instance ID with recurrence = 400. PUT to a deleted/stale instance = 410.
+- Fix 1: Added `targetEventId?: string` to `onSave` updates type in `EditProps`
+- Fix 2: In `EventModal.tsx` `handleSave`, added explicit `if (choice === "all")` branch that passes `targetEventId: editProps.event.recurringEventId` and returns
+- Fix 3: In `CalendarPanel.tsx` `onSave` handler, destructure `targetEventId` from updates and use `targetId = targetEventId ?? editingEvent.id` for the `putEvent` call
+
+**Bug — "This and following" not updating Google Calendar (UNRESOLVED)**
+- Symptom: "Series split" success toast appears, all network requests return 200, but Google Calendar is completely unchanged
+- Confirmed: not a UI refresh issue — Google Calendar itself shows no change
+- All 8 network requests in the split flow return 200 (preflight + fetch pairs)
+- `splitRecurringSeries` does: GET master → PATCH master RRULE with UNTIL → DELETE instance → POST new series
+- All steps return 200 but the changes don't persist on Google's side
+- Hypothesis not yet confirmed: Google may be silently accepting but ignoring the PATCH if the UNTIL date calculation is wrong, or the DELETE 200 is actually a no-op (410 gone but treated as success), or the POST is creating the new series somewhere unexpected
+- **Next thread: start by logging the full request bodies for each step in `splitRecurringSeries` to confirm what's actually being sent**
+
+### Current file states needed for next thread
+Paste these files at the start of the next thread:
+- `src/api/GoogleCalendarAPI.ts` — specifically `splitRecurringSeries` method
+- `src/components/EventModal.tsx` — specifically `handleSave` and the recurrence block
+- `src/components/CalendarPanel.tsx` — specifically `onSave` and `onSplitSeries` handlers
+
+### Key code changes from this session
+
+**EventModal.tsx EditProps type:**
+```typescript
+onSave: (updates: { title: string; start: string; end: string; allDay: boolean; location?: string; description?: string; recurrence?: string[]; targetEventId?: string }) => Promise<void>;
+```
+
+**EventModal.tsx handleSave — recurringEventId block:**
+```typescript
+if (editProps.event.recurringEventId) {
+  const choice = await editProps.askRecurring(editProps.event, { hideThis: true, showAll: true });
+  if (!choice) return;
+  if (choice === "following") {
+    await editProps.onSplitSeries(updates);
+    return;
+  }
+  if (choice === "all") {
+    await editProps.onSave({ ...updates, targetEventId: editProps.event.recurringEventId });
+    return;
+  }
+}
+```
+
+**CalendarPanel.tsx onSave handler — putEvent call:**
+```typescript
+const { targetEventId, ...putUpdates } = updates;
+const targetId = targetEventId ?? editingEvent.id;
+const updated = await plugin.api.putEvent(account, editingEvent.calendarId, targetId, putUpdates);
+```
+
+### Decisions from this session
+
+| Decision | Choice | Reason |
+|---|---|---|
+| Repeat UI layout | Inline rows (Every/On/End) | More ergonomic, matches iOS Calendar UX |
+| Frequency labels | Day/Week/Month/Year (not Daily/Weekly) | Shorter, matches reference design |
+| "All events" ID routing | Pass `targetEventId` through updates shape | Cleanest way to route master ID from EventModal through CalendarPanel without adding a new prop |
+| "This and following" debug approach | Log full request bodies next session | All 200s means the issue is in what's being sent, not the auth or network layer |
