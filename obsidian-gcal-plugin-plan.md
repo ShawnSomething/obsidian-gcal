@@ -374,7 +374,30 @@ Recurring instance IDs have a `_YYYYMMDDTHHMMSSZ` suffix (e.g. `bd8d1298a0d94760
 - "All events" → PATCH the master ID (`recurringEventId`)
 - "This and following" does NOT exist in the Google Calendar API for attendee responses — confirmed via API docs and Google Calendar's own UI (which only shows "This event" / "All events" for RSVP).
 
-### 5.9 FullCalendar Config Notes
+**Recurring instance RRULE on modal open:**
+Instances don't carry the `recurrence` array — only the master event does. On `eventClick`, if `calEvent.recurringEventId` is set, fetch the master with `getEvent()` and merge its `recurrence` onto the instance before calling `setEditingEvent`. Show a "Loading event..." toast while in-flight. Fall through gracefully on error (modal opens without recurrence data).
+
+```typescript
+eventClick={async (info) => {
+  const calEvent = info.event.extendedProps.calEvent as CalEvent;
+  if (calEvent.recurringEventId) {
+    const account = plugin.data.accounts.find(a => a.accountId === calEvent.accountId);
+    if (account) {
+      showToast("Loading event...", "loading");
+      try {
+        const master = await plugin.api.getEvent(account, calEvent.calendarId, calEvent.recurringEventId);
+        setToast(null);
+        setEditingEvent({ ...calEvent, recurrence: master.recurrence });
+        return;
+      } catch {
+        setToast(null);
+        // fall through
+      }
+    }
+  }
+  setEditingEvent(calEvent);
+}}
+```
 
 **Height fix — CalendarPanel uses flex column layout:**
 ```tsx
@@ -502,9 +525,66 @@ const [untilDate, setUntilDate] = useState("");
 const [countNum, setCountNum] = useState(1);
 ```
 
-**Repeat UI in edit mode** — only shown when `!(props as EditProps).event.recurringEventId && !(props as EditProps).event.recurrence?.length`. Do not show for events that are already part of a series. Use inline cast in JSX condition — do not hoist to a component-level variable (causes TypeScript narrowing errors throughout).
+**Repeat UI in edit mode** — shown for all events in edit mode. For events already in a series (`recurringEventId` or `recurrence?.length`), the existing RRULE is parsed and pre-populated via `parseRRule()`. For non-recurring events, defaults are used. Use inline cast in JSX condition — do not hoist to a component-level variable (causes TypeScript narrowing errors throughout).
 
-Import: `import { RRuleFrequency, RRuleDay, buildRRule } from "../utils/rrule"` — static import, not dynamic.
+**`parseRRule` helper in EventModal** — reads a raw RRULE string back into UI state:
+```typescript
+function parseRRule(rruleStr: string) {
+  const str = rruleStr.replace(/^RRULE:/, "");
+  const parts: Record<string, string> = {};
+  str.split(";").forEach(part => {
+    const [key, val] = part.split("=");
+    if (key && val) parts[key] = val;
+  });
+  const frequency = (parts["FREQ"] as RRuleFrequency) ?? "WEEKLY";
+  const interval = parts["INTERVAL"] ? parseInt(parts["INTERVAL"]) : 1;
+  const days = parts["BYDAY"] ? (parts["BYDAY"].split(",") as RRuleDay[]) : [];
+  let endType: "never" | "until" | "count" = "never";
+  let untilDate = "";
+  let countNum = 1;
+  if (parts["UNTIL"]) {
+    endType = "until";
+    const u = parts["UNTIL"];
+    untilDate = `${u.slice(0, 4)}-${u.slice(4, 6)}-${u.slice(6, 8)}`;
+  } else if (parts["COUNT"]) {
+    endType = "count";
+    countNum = parseInt(parts["COUNT"]);
+  }
+  return { frequency, interval, days, endType, untilDate, countNum };
+}
+```
+
+**Recurrence state initialisation in EventModal** — pre-populates from existing RRULE if present:
+```typescript
+const existingRRule = !isCreate ? (props as EditProps).event.recurrence?.[0] : undefined;
+const parsedRRule = existingRRule ? parseRRule(existingRRule) : null;
+
+const [repeat, setRepeat] = useState(!!existingRRule);
+const [frequency, setFrequency] = useState<RRuleFrequency>(parsedRRule?.frequency ?? "WEEKLY");
+const [interval, setIntervalVal] = useState(parsedRRule?.interval ?? 1);
+const [days, setDays] = useState<RRuleDay[]>(parsedRRule?.days.length ? parsedRRule.days : [getStartDay(start)]);
+const [endType, setEndType] = useState<"never" | "until" | "count">(parsedRRule?.endType ?? "never");
+const [untilDate, setUntilDate] = useState(parsedRRule?.untilDate ?? "");
+const [countNum, setCountNum] = useState(parsedRRule?.countNum ?? 1);
+```
+
+**Recurring instance limitation** — instances (`recurringEventId` set) don't carry the `recurrence` array — that lives on the master event only. So `existingRRule` is undefined for instances and `repeat` initialises `false`. Two options to fix (deferred — choose in next thread): (1) set `repeat=true` when `recurringEventId` is set but show default RRULE values, or (2) fetch master event on modal open to get the real RRULE. Option 2 is accurate but costs an extra API call.
+
+**Editing RRULE on recurring events routes through RecurringModal with `hideThis: true`** — "This event" is hidden since you can't give one instance a different repeat rule. Only "This and following" and "All events" are shown.
+
+**EventModal field order:**
+1. Title
+2. Datetime row (start, end, all-day checkbox)
+3. Repeat checkbox + recurrence block (both edit and create modes)
+4. Calendar selector (create mode only)
+5. Divider
+6. Description
+7. Location
+8. Guests list (edit mode only)
+9. RSVP buttons — Yes / Maybe / No (edit mode only, when `onRespond` is provided)
+10. Footer — Delete (edit), Cancel, Save/Create
+
+**RSVP buttons placement** — below guests, above footer. Shown in edit mode when `onRespond` prop is provided. Active state highlighted per current `selfResponseStatus`. CSS classes: `gcal-btn-response`, `gcal-btn-response--{status}`, `gcal-btn-response--active`.
 
 ### 5.11 Accept / Decline / Tentative Pattern
 
@@ -533,6 +613,7 @@ Import: `import { RRuleFrequency, RRuleDay, buildRRule } from "../utils/rrule"` 
 interface RecurringModalProps {
   eventTitle: string;
   title?: string;          // defaults to "Edit recurring event"
+  hideThis?: boolean;      // hides "This event" option
   hideFollowing?: boolean; // hides "This and following events" option
   showAll?: boolean;       // shows "All events" option
   onChoice: (choice: "this" | "following" | "all" | null) => void;
@@ -543,7 +624,7 @@ interface RecurringModalProps {
 ```typescript
 const askRecurring = (
   event: CalEvent,
-  opts?: { title?: string; hideFollowing?: boolean; showAll?: boolean }
+  opts?: { title?: string; hideThis?: boolean; hideFollowing?: boolean; showAll?: boolean }
 ): Promise<"this" | "following" | "all" | null>
 ```
 
@@ -1021,8 +1102,8 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
   - [x] Default branch switched from `main` to `master` (all code was on `master`, `main` was the empty template)
 
 ### Phase 9 - Post Release
-  - [ ] Add optional donation payment method at the top and bottom of the readme
-  - [ ] Add optional donation payment method at the bottom of the settings panel
+  - [x] Add optional donation payment method at the top and bottom of the readme
+  - [x] Add optional donation payment method at the bottom of the settings panel
 
 ---
 
@@ -1076,6 +1157,9 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 | obsidian-releases PR no longer accepted | Submit via `community.obsidian.md` developer dashboard instead | Obsidian migrated to automated review system in 2026. The obsidian-releases repo disabled PR creation. |
 | Default branch must contain manifest.json | Obsidian validator reads default branch only | If code is on `master` but default is `main` (empty), validator fails with "Could not find manifest.json". Fix: switch default branch in GitHub Settings → General. |
 | Old template tag blocks release tagging | Delete old `1.0.0` tag before retagging: `git tag -d 1.0.0` then `git push origin --delete 1.0.0` | Obsidian sample plugin template ships with a `1.0.0` tag on an old commit — must clear it first. |
+| RecurringModal flag sync | hideThis, hideFollowing, showAll must be kept in sync across RecurringModalProps, recurringModalState type, askRecurring opts type, and EditProps.askRecurring type | Missing any one causes a TypeScript error at the call site |
+| Recurring instance RRULE missing | Instances don't carry recurrence array — it lives on the master only | Fixed: eventClick fetches master on recurring instance click, merges recurrence onto instance before opening modal. Falls through gracefully on fetch failure. |
+| eventClick master fetch failure | getEvent call fails (network, auth) | Falls through silently — modal opens without recurrence data. Repeat checkbox shows unchecked. User can still edit other fields. Acceptable degradation. |
 
 ---
 
@@ -1182,6 +1266,13 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 | Git tag for release | Delete old template tag before retagging — `git tag -d 1.0.0` then `git push origin --delete 1.0.0` | Obsidian sample plugin template ships with a `1.0.0` tag on an old commit. Must delete locally and remotely before tagging your own release. |
 | Default branch | `master` not `main` — switch in GitHub Settings → General → Default branch | All code was committed to `master`. `main` was the empty template. Obsidian's validator reads the default branch for `manifest.json`. |
 | Repo visibility | Must be public before submitting to Obsidian Community | Automated review scans source code. Obsidian app also pulls `manifest.json` and `README.md` directly from the public repo. |
+| RSVP buttons in EventModal | Below guests section, above footer | Logical grouping — you see who's attending, then decide your own response |
+| Repeat field position in EventModal | Below datetime row, above divider/description | It's a time-related field — belongs near the date picker, not at the bottom |
+| parseRRule location | Helper function in EventModal.tsx | Only used in EventModal; no benefit to exporting it |
+| Editing RRULE on recurring events | Routes through RecurringModal with hideThis=true | "This event only" makes no sense for a recurrence rule change — you can't give one instance a different repeat rule |
+| hideThis prop | Added to RecurringModal, recurringModalState, askRecurring opts, EditProps.askRecurring | All four must stay in sync when adding new RecurringModal display flags |
+| Recurring instance RRULE display | Fetch master event on eventClick, merge recurrence onto instance before opening modal | Instances don't carry recurrence array — only the master does. Accuracy chosen over avoiding the extra API call. Loading toast shown while fetch is in-flight. Cache considered and rejected — adds staleness risk, and sub-second latency is acceptable. |
+| Recurring instance eventClick master fetch | `getEvent(account, calendarId, calEvent.recurringEventId)` on click | Falls through gracefully if fetch fails — modal opens without recurrence data rather than blocking entirely. |
 
 ---
 
@@ -1202,12 +1293,19 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 - Phase 7.4: DONE
 - Phase 7.5: CANCELLED — auth simplification deferred indefinitely (see section 5.20)
 - Phase 8: DONE — plugin submitted to Obsidian Community, automated review in progress
+- Phase 9: DONE
 
-### Immediate Next Steps
+### Post-release incremental fixes — COMPLETE
 
-1. **Monitor automated review** at `https://community.obsidian.md` — check submission status
-2. **Fix any review failures** flagged by Obsidian's automated scanner
-3. Once approved, plugin will be live in Obsidian community browser within 24 hours
+- RSVP buttons (Yes / Maybe / No) were missing from EventModal — re-added below guests section
+- Repeat checkbox moved to just below the datetime row (above the divider + description), in both edit and create modes
+- `parseRRule()` helper added to EventModal — reads existing RRULE string back into frequency/interval/days/endType state
+- Recurrence state now pre-populates from existing RRULE on edit mode open
+- Editing the RRULE on a recurring event now routes through RecurringModal with `hideThis: true` (only "This and following" and "All events" shown)
+- `hideThis` prop added to `RecurringModal`, `recurringModalState`, `askRecurring` opts, and `EditProps.askRecurring` type
+- Recurring instance RRULE fix: `eventClick` now fetches master event for recurring instances, merges `recurrence` onto instance before opening modal. Loading toast shown while in-flight. Falls through gracefully on error.
+
+**No pending items.**
 
 ### README notes
 - README lives at repo root
