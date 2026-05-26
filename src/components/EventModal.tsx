@@ -354,7 +354,32 @@ export default function EventModal(props: Props) {
           </>
         )}
 
-        {/* Going? (edit mode) */}
+        {/* RSVP (edit mode, when onRespond is provided) */}
+        {props.mode === "edit" && (props as EditProps).onRespond && (
+          <>
+            <div className="gcal-modal-divider" />
+            <div className="gcal-rsvp-row">
+              <span className="gcal-field-sublabel">Going?</span>
+              <div className="gcal-rsvp-buttons">
+                {(["accepted", "tentative", "declined"] as const).map(status => (
+                  <button
+                    key={status}
+                    className={[
+                      "gcal-btn-response",
+                      `gcal-btn-response--${status}`,
+                      (props as EditProps).event.selfResponseStatus === status ? "gcal-btn-response--active" : "",
+                    ].join(" ").trim()}
+                    onClick={() => (props as EditProps).onRespond!(status)}
+                  >
+                    {status === "accepted" ? "Yes" : status === "tentative" ? "Maybe" : "No"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Repeat (edit mode) */}
         {props.mode === "edit" && !(props as EditProps).event.recurringEventId && !(props as EditProps).event.recurrence?.length && (
           <>
             <div className="gcal-modal-divider" />
