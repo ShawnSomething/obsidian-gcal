@@ -53,6 +53,7 @@ export default function CalendarPanel({ plugin }: Props) {
   const [recurringModalState, setRecurringModalState] = useState<{
     event: CalEvent;
     title?: string;
+    hideThis?: boolean;
     hideFollowing?: boolean;
     showAll?: boolean;
     resolve: (choice: "this" | "following" | "all" | null) => void;
@@ -81,7 +82,7 @@ export default function CalendarPanel({ plugin }: Props) {
 
   const askRecurring = (
     event: CalEvent,
-    opts?: { title?: string; hideFollowing?: boolean; showAll?: boolean }
+    opts?: { title?: string; hideThis?: boolean; hideFollowing?: boolean; showAll?: boolean }
   ): Promise<"this" | "following" | "all" | null> => {
     return new Promise((resolve) => {
       setRecurringModalState({ event, resolve, ...opts });
@@ -534,8 +535,24 @@ export default function CalendarPanel({ plugin }: Props) {
             }
           }}
 
-          eventClick={(info) => {
-            setEditingEvent(info.event.extendedProps.calEvent as CalEvent);
+          eventClick={async (info) => {
+            const calEvent = info.event.extendedProps.calEvent as CalEvent;
+            if (calEvent.recurringEventId) {
+              const account = plugin.data.accounts.find(a => a.accountId === calEvent.accountId);
+              if (account) {
+                showToast("Loading event...", "loading");
+                try {
+                  const master = await plugin.api.getEvent(account, calEvent.calendarId, calEvent.recurringEventId);
+                  setToast(null);
+                  setEditingEvent({ ...calEvent, recurrence: master.recurrence });
+                  return;
+                } catch {
+                  setToast(null);
+                  // fall through — open modal without recurrence data rather than blocking
+                }
+              }
+            }
+            setEditingEvent(calEvent);
           }}
 
           select={(info) => {
@@ -696,6 +713,7 @@ export default function CalendarPanel({ plugin }: Props) {
         <RecurringModal
           eventTitle={recurringModalState.event.title}
           title={recurringModalState.title}
+          hideThis={recurringModalState.hideThis}
           hideFollowing={recurringModalState.hideFollowing}
           showAll={recurringModalState.showAll}
           onChoice={(choice) => {

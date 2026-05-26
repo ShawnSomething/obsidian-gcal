@@ -5,7 +5,7 @@ import { RRuleFrequency, RRuleDay, buildRRule } from "../utils/rrule";
 type EditProps = {
   mode: "edit";
   event: CalEvent;
-  askRecurring: (event: CalEvent, opts?: { title?: string; hideFollowing?: boolean; showAll?: boolean }) => Promise<"this" | "following" | "all" | null>;
+  askRecurring: (event: CalEvent, opts?: { title?: string; hideThis?: boolean; hideFollowing?: boolean; showAll?: boolean }) => Promise<"this" | "following" | "all" | null>;
   onSave: (updates: { title: string; start: string; end: string; allDay: boolean; location?: string; description?: string; recurrence?: string[] }) => Promise<void>;
   onSplitSeries: (updates: { title: string; start: string; end: string; allDay: boolean; location?: string; description?: string }) => Promise<void>;
   onDelete: () => void;
@@ -28,6 +28,30 @@ function toLocalInput(isoString: string): string {
   const date = new Date(isoString);
   const offset = date.getTimezoneOffset() * 60000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function parseRRule(rruleStr: string) {
+  const str = rruleStr.replace(/^RRULE:/, "");
+  const parts: Record<string, string> = {};
+  str.split(";").forEach(part => {
+    const [key, val] = part.split("=");
+    if (key && val) parts[key] = val;
+  });
+  const frequency = (parts["FREQ"] as RRuleFrequency) ?? "WEEKLY";
+  const interval = parts["INTERVAL"] ? parseInt(parts["INTERVAL"]) : 1;
+  const days = parts["BYDAY"] ? (parts["BYDAY"].split(",") as RRuleDay[]) : [];
+  let endType: "never" | "until" | "count" = "never";
+  let untilDate = "";
+  let countNum = 1;
+  if (parts["UNTIL"]) {
+    endType = "until";
+    const u = parts["UNTIL"];
+    untilDate = `${u.slice(0, 4)}-${u.slice(4, 6)}-${u.slice(6, 8)}`;
+  } else if (parts["COUNT"]) {
+    endType = "count";
+    countNum = parseInt(parts["COUNT"]);
+  }
+  return { frequency, interval, days, endType, untilDate, countNum };
 }
 
 const DAY_MAP: RRuleDay[] = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
@@ -74,13 +98,18 @@ export default function EventModal(props: Props) {
   const visibleAttendees = showAllGuests ? attendees : attendees.slice(0, GUEST_PREVIEW_COUNT);
 
   // Recurrence state (create mode only)
-  const [repeat, setRepeat] = useState(false);
-  const [frequency, setFrequency] = useState<RRuleFrequency>("WEEKLY");
-  const [interval, setIntervalVal] = useState(1);
-  const [days, setDays] = useState<RRuleDay[]>([getStartDay(start)]);
-  const [endType, setEndType] = useState<"never" | "until" | "count">("never");
-  const [untilDate, setUntilDate] = useState("");
-  const [countNum, setCountNum] = useState(1);
+  const existingRRule = !isCreate
+    ? (props as EditProps).event.recurrence?.[0]
+    : undefined;
+  const parsedRRule = existingRRule ? parseRRule(existingRRule) : null;
+
+  const [repeat, setRepeat] = useState(!!existingRRule);
+  const [frequency, setFrequency] = useState<RRuleFrequency>(parsedRRule?.frequency ?? "WEEKLY");
+  const [interval, setIntervalVal] = useState(parsedRRule?.interval ?? 1);
+  const [days, setDays] = useState<RRuleDay[]>(parsedRRule?.days.length ? parsedRRule.days : [getStartDay(start)]);
+  const [endType, setEndType] = useState<"never" | "until" | "count">(parsedRRule?.endType ?? "never");
+  const [untilDate, setUntilDate] = useState(parsedRRule?.untilDate ?? "");
+  const [countNum, setCountNum] = useState(parsedRRule?.countNum ?? 1);
 
   const ALL_DAYS: RRuleDay[] = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
   const DAY_LABELS: Record<RRuleDay, string> = {
@@ -164,7 +193,15 @@ export default function EventModal(props: Props) {
       };
 
       if (editProps.event.recurringEventId) {
-        const choice = await editProps.askRecurring(editProps.event);
+        const choice = await editProps.askRecurring(editProps.event, { hideThis: true, showAll: true });
+        if (!choice) return;
+        if (choice === "following") {
+          await editProps.onSplitSeries(updates);
+          return;
+        }
+      } else if (editProps.event.recurrence?.length && updates.recurrence) {
+        // editing RRULE on master event — ask all vs following
+        const choice = await editProps.askRecurring(editProps.event, { hideThis: true, showAll: true });
         if (!choice) return;
         if (choice === "following") {
           await editProps.onSplitSeries(updates);
@@ -279,108 +316,8 @@ export default function EventModal(props: Props) {
           </div>
         )}
 
-        <div className="gcal-modal-divider" />
-
-        {/* Description */}
-        <div className="gcal-field-row">
-          <span className="gcal-field-icon">☰</span>
-          <div className="gcal-field-body">
-            <span className="gcal-field-sublabel">Description</span>
-            {props.mode === "edit" ? (
-              <div
-                className="gcal-description-html"
-                dangerouslySetInnerHTML={{ __html: description }}
-              />
-            ) : (
-              <textarea
-                value={description}
-                onChange={e => setDescription(e.target.value)}
-                placeholder="Add description"
-                className="gcal-textarea"
-                rows={3}
-              />
-            )}
-          </div>
-        </div>
-
-        {/* Location */}
-        <div className="gcal-field-row">
-          <span className="gcal-field-icon">📍</span>
-          <input
-            type="text"
-            value={location}
-            onChange={e => setLocation(e.target.value)}
-            placeholder="Add location"
-            className="gcal-field-input"
-          />
-        </div>
-
-        {/* Guests (edit mode only) */}
-        {props.mode === "edit" && attendees.length > 0 && (
-          <>
-            <div className="gcal-modal-divider" />
-            <div className="gcal-guests-section">
-              <span className="gcal-guests-count">
-                {attendees.length} guest{attendees.length !== 1 ? "s" : ""}
-              </span>
-              <div className="gcal-attendee-list">
-                {visibleAttendees.map(a => (
-                  <div key={a.email} className="gcal-attendee-row">
-                    <div
-                      className="gcal-attendee-avatar"
-                      style={{ background: getAvatarColor(a.email) }}
-                    >
-                      {a.email.charAt(0).toUpperCase()}
-                    </div>
-                    <span className="gcal-attendee-email">{a.email}</span>
-                    <span className={`gcal-attendee-status gcal-attendee-status--${a.responseStatus}`}>
-                      {a.responseStatus === "accepted" ? "✓"
-                        : a.responseStatus === "declined" ? "✗"
-                          : a.responseStatus === "tentative" ? "?"
-                            : "–"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              {attendees.length > GUEST_PREVIEW_COUNT && (
-                <button
-                  className="gcal-see-all-btn"
-                  onClick={() => setShowAllGuests(v => !v)}
-                >
-                  {showAllGuests ? "Show less" : `See all ${attendees.length} guests`}
-                </button>
-              )}
-            </div>
-          </>
-        )}
-
-        {/* RSVP (edit mode, when onRespond is provided) */}
-        {props.mode === "edit" && (props as EditProps).onRespond && (
-          <>
-            <div className="gcal-modal-divider" />
-            <div className="gcal-rsvp-row">
-              <span className="gcal-field-sublabel">Going?</span>
-              <div className="gcal-rsvp-buttons">
-                {(["accepted", "tentative", "declined"] as const).map(status => (
-                  <button
-                    key={status}
-                    className={[
-                      "gcal-btn-response",
-                      `gcal-btn-response--${status}`,
-                      (props as EditProps).event.selfResponseStatus === status ? "gcal-btn-response--active" : "",
-                    ].join(" ").trim()}
-                    onClick={() => (props as EditProps).onRespond!(status)}
-                  >
-                    {status === "accepted" ? "Yes" : status === "tentative" ? "Maybe" : "No"}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-
         {/* Repeat (edit mode) */}
-        {props.mode === "edit" && !(props as EditProps).event.recurringEventId && !(props as EditProps).event.recurrence?.length && (
+        {props.mode === "edit" && (
           <>
             <div className="gcal-modal-divider" />
             <label className="gcal-checkbox-label">
@@ -575,6 +512,106 @@ export default function EventModal(props: Props) {
                 )}
               </div>
             )}
+          </>
+        )}
+
+        <div className="gcal-modal-divider" />
+
+        {/* Description */}
+        <div className="gcal-field-row">
+          <span className="gcal-field-icon">☰</span>
+          <div className="gcal-field-body">
+            <span className="gcal-field-sublabel">Description</span>
+            {props.mode === "edit" ? (
+              <div
+                className="gcal-description-html"
+                dangerouslySetInnerHTML={{ __html: description }}
+              />
+            ) : (
+              <textarea
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                placeholder="Add description"
+                className="gcal-textarea"
+                rows={3}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Location */}
+        <div className="gcal-field-row">
+          <span className="gcal-field-icon">📍</span>
+          <input
+            type="text"
+            value={location}
+            onChange={e => setLocation(e.target.value)}
+            placeholder="Add location"
+            className="gcal-field-input"
+          />
+        </div>
+
+        {/* Guests (edit mode only) */}
+        {props.mode === "edit" && attendees.length > 0 && (
+          <>
+            <div className="gcal-modal-divider" />
+            <div className="gcal-guests-section">
+              <span className="gcal-guests-count">
+                {attendees.length} guest{attendees.length !== 1 ? "s" : ""}
+              </span>
+              <div className="gcal-attendee-list">
+                {visibleAttendees.map(a => (
+                  <div key={a.email} className="gcal-attendee-row">
+                    <div
+                      className="gcal-attendee-avatar"
+                      style={{ background: getAvatarColor(a.email) }}
+                    >
+                      {a.email.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="gcal-attendee-email">{a.email}</span>
+                    <span className={`gcal-attendee-status gcal-attendee-status--${a.responseStatus}`}>
+                      {a.responseStatus === "accepted" ? "✓"
+                        : a.responseStatus === "declined" ? "✗"
+                          : a.responseStatus === "tentative" ? "?"
+                            : "–"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {attendees.length > GUEST_PREVIEW_COUNT && (
+                <button
+                  className="gcal-see-all-btn"
+                  onClick={() => setShowAllGuests(v => !v)}
+                >
+                  {showAllGuests ? "Show less" : `See all ${attendees.length} guests`}
+                </button>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* RSVP (edit mode, when onRespond is provided) */}
+        {props.mode === "edit" && (props as EditProps).onRespond && (
+          <>
+            <div className="gcal-modal-divider" />
+            <div className="gcal-rsvp-row">
+              <span className="gcal-field-sublabel">Going?</span>
+              <div className="gcal-rsvp-buttons">
+                {(["accepted", "tentative", "declined"] as const).map(status => (
+                  <button
+                    key={status}
+                    className={[
+                      "gcal-btn-response",
+                      `gcal-btn-response--${status}`,
+                      (props as EditProps).event.selfResponseStatus === status ? "gcal-btn-response--active" : "",
+                    ].join(" ").trim()}
+                    onClick={() => (props as EditProps).onRespond!(status)}
+                  >
+                    {status === "accepted" ? "Yes" : status === "tentative" ? "Maybe" : "No"}
+                  </button>
+                ))}
+              </div>
+            </div>
           </>
         )}
 
