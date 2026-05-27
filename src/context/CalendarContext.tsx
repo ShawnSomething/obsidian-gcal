@@ -48,7 +48,7 @@ type ViewType = "day" | "3day" | "week";
 
 interface CalendarState {
   calendars: CalendarMeta[];
-  events: CalEvent[];
+  windowEvents: { prev: CalEvent[]; current: CalEvent[]; next: CalEvent[] };
   activeView: ViewType;
   selectedDate: Date;
   isLoading: boolean;
@@ -57,7 +57,7 @@ interface CalendarState {
 
 const initialState: CalendarState = {
   calendars: [],
-  events: [],
+  windowEvents: { prev: [], current: [], next: [] },
   activeView: "week",
   selectedDate: new Date(),
   isLoading: false,
@@ -68,7 +68,11 @@ const initialState: CalendarState = {
 
 type Action =
   | { type: "SET_CALENDARS"; payload: CalendarMeta[] }
-  | { type: "SET_EVENTS"; payload: CalEvent[] }
+  | { type: "SET_CURRENT_WINDOW"; payload: CalEvent[] }
+  | { type: "SET_PREV_WINDOW"; payload: CalEvent[] }
+  | { type: "SET_NEXT_WINDOW"; payload: CalEvent[] }
+  | { type: "SHIFT_FORWARD" }
+  | { type: "SHIFT_BACK" }
   | { type: "TOGGLE_CALENDAR"; payload: string } // calendar id
   | { type: "SET_VIEW"; payload: ViewType }
   | { type: "SET_DATE"; payload: Date }
@@ -86,8 +90,34 @@ function calendarReducer(state: CalendarState, action: Action): CalendarState {
     case "SET_CALENDARS":
       return { ...state, calendars: action.payload };
 
-    case "SET_EVENTS":
-      return { ...state, events: action.payload };
+    case "SET_CURRENT_WINDOW":
+      return { ...state, windowEvents: { ...state.windowEvents, current: action.payload } };
+
+    case "SET_PREV_WINDOW":
+      return { ...state, windowEvents: { ...state.windowEvents, prev: action.payload } };
+
+    case "SET_NEXT_WINDOW":
+      return { ...state, windowEvents: { ...state.windowEvents, next: action.payload } };
+
+    case "SHIFT_FORWARD":
+      return {
+        ...state,
+        windowEvents: {
+          prev: state.windowEvents.current,
+          current: state.windowEvents.next,
+          next: [],
+        },
+      };
+
+    case "SHIFT_BACK":
+      return {
+        ...state,
+        windowEvents: {
+          prev: [],
+          current: state.windowEvents.prev,
+          next: state.windowEvents.current,
+        },
+      };
 
     case "TOGGLE_CALENDAR":
       return {
@@ -108,9 +138,12 @@ function calendarReducer(state: CalendarState, action: Action): CalendarState {
     case "UPDATE_EVENT":
       return {
         ...state,
-        events: state.events.map((e) =>
-          e.id === action.payload.id ? { ...e, ...action.payload.changes } : e
-        ),
+        windowEvents: {
+          ...state.windowEvents,
+          current: state.windowEvents.current.map((e) =>
+            e.id === action.payload.id ? { ...e, ...action.payload.changes } : e
+          ),
+        },
       };
 
     case "SET_LOADING":
@@ -122,22 +155,34 @@ function calendarReducer(state: CalendarState, action: Action): CalendarState {
     case "ADD_EVENT":
       return {
         ...state,
-        events: [...state.events.filter((e) => e.id !== action.payload.id), action.payload],
+        windowEvents: {
+          ...state.windowEvents,
+          current: [
+            ...state.windowEvents.current.filter((e) => e.id !== action.payload.id),
+            action.payload,
+          ],
+        },
       };
 
     case "REMOVE_EVENT":
       return {
         ...state,
-        events: state.events.filter((e) => e.id !== action.payload),
+        windowEvents: {
+          ...state.windowEvents,
+          current: state.windowEvents.current.filter((e) => e.id !== action.payload),
+        },
       };
 
     case "MERGE_EVENTS":
       return {
         ...state,
-        events: [
-          ...state.events.filter((e) => e.calendarId !== action.payload.calendarId),
-          ...action.payload.events,
-        ],
+        windowEvents: {
+          ...state.windowEvents,
+          current: [
+            ...state.windowEvents.current.filter((e) => e.calendarId !== action.payload.calendarId),
+            ...action.payload.events,
+          ],
+        },
       };
 
     default:

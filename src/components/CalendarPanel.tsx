@@ -4,7 +4,7 @@ import timeGridPlugin from "@fullcalendar/timegrid";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import GCalPlugin, { CommandBridge } from "../main";
-import { useCalendar, CalEvent } from "../context/CalendarContext";
+import { useCalendar, CalEvent, CalendarMeta } from "../context/CalendarContext";
 import { deduplicateEvents } from "../utils/dedup";
 import CalendarToggle from "./CalendarToggle";
 import EventModal from "./EventModal";
@@ -40,6 +40,27 @@ function getViewWindow(date: Date, view: "day" | "3day" | "week"): { timeMin: Da
   else end.setDate(end.getDate() + 7);
 
   return { timeMin: start, timeMax: end };
+}
+
+// Returns the timeMin of the window immediately before and after the given date/view.
+// Both dates are window-aligned (Monday-snapped for week view, etc.).
+function getAdjacentDates(date: Date, view: "day" | "3day" | "week"): { prevDate: Date; nextDate: Date } {
+  const { timeMin: windowStart } = getViewWindow(date, view);
+  const prevDate = new Date(windowStart);
+  const nextDate = new Date(windowStart);
+
+  if (view === "day") {
+    prevDate.setDate(prevDate.getDate() - 1);
+    nextDate.setDate(nextDate.getDate() + 1);
+  } else if (view === "3day") {
+    prevDate.setDate(prevDate.getDate() - 3);
+    nextDate.setDate(nextDate.getDate() + 3);
+  } else {
+    prevDate.setDate(prevDate.getDate() - 7);
+    nextDate.setDate(nextDate.getDate() + 7);
+  }
+
+  return { prevDate, nextDate };
 }
 
 export default function CalendarPanel({ plugin }: Props) {
@@ -89,51 +110,92 @@ export default function CalendarPanel({ plugin }: Props) {
     });
   };
 
-  const fetchAllRef = useRef<(() => Promise<void>) | undefined>(undefined);
+  const hasFetchedInitial = useRef(false);
+
+  // Fetches calendar list, dispatches SET_CALENDARS, returns merged CalendarMeta[].
+  const fetchCalendarsRef = useRef<(() => Promise<CalendarMeta[]>) | undefined>(undefined);
+
+  // Generic event fetcher for any date/view. Returns CalEvent[], no dispatch.
+  const fetchWindowRef = useRef<
+    ((date: Date, view: "day" | "3day" | "week", calendars?: CalendarMeta[]) => Promise<CalEvent[]>) | undefined
+  >(undefined);
+
+  // Fetches all 3 windows (prev, current, next) for a given date and dispatches each.
+  const fetchAllWindowsRef = useRef<((date: Date, calendars?: CalendarMeta[]) => Promise<void>) | undefined>(undefined);
+
+  // Full refresh: calendar list + all 3 windows. Used by poll and manual refresh.
+  const runFullRefreshRef = useRef<(() => Promise<void>) | undefined>(undefined);
+
+  // Single-calendar targeted refetch. Operates on windowEvents.current via MERGE_EVENTS.
   const fetchCalendarRef = useRef<((calendarId: string, accountId: string) => Promise<void>) | undefined>(undefined);
+
+  // Navigation refs — always use latest activeView closure via re-assignment each render.
+  const navigateNextRef = useRef<(() => void) | undefined>(undefined);
+  const navigatePrevRef = useRef<(() => void) | undefined>(undefined);
+  const fetchIdRef = useRef(0);
 
   const calendarRef = useRef<FullCalendar>(null);
   const calendarWrapperRef = useRef<HTMLDivElement>(null);
 
-  fetchAllRef.current = async () => {
-    const accounts = plugin.data.accounts;
-    if (!accounts.length) return;
+  // ─── Ref assignments (re-run every render, always latest closure) ───────────
 
+  fetchCalendarsRef.current = async (): Promise<CalendarMeta[]> => {
+    const accounts = plugin.data.accounts;
+    if (!accounts.length) return [];
+    const allCalendars = (await Promise.all(
+      accounts.map((account) => plugin.api.getCalendarList(account))
+    )).flat();
+    const merged = allCalendars.map((cal) => {
+      const existing = state.calendars.find((c) => c.id === cal.id);
+      if (existing) return { ...cal, visible: existing.visible };
+      const persisted = plugin.data.calendarVisibility?.[cal.id];
+      return { ...cal, visible: persisted !== undefined ? persisted : cal.visible };
+    });
+    dispatch({ type: "SET_CALENDARS", payload: merged });
+    return merged;
+  };
+
+  fetchWindowRef.current = async (
+    date: Date,
+    view: "day" | "3day" | "week",
+    calendars?: CalendarMeta[]
+  ): Promise<CalEvent[]> => {
+    const cals = calendars ?? state.calendars;
+    const accounts = plugin.data.accounts;
+    const { timeMin, timeMax } = getViewWindow(date, view);
+    const allEvents = (await Promise.all(
+      cals
+        .filter((cal) => cal.visible)
+        .map((cal) => {
+          const account = accounts.find((a) => a.accountId === cal.accountId);
+          if (!account) return Promise.resolve([]);
+          return plugin.api.getEvents(account, cal.id, timeMin, timeMax);
+        })
+    )).flat();
+    return deduplicateEvents(allEvents);
+  };
+
+  fetchAllWindowsRef.current = async (date: Date, calendars?: CalendarMeta[]): Promise<void> => {
+    const id = ++fetchIdRef.current;
+    const { prevDate, nextDate } = getAdjacentDates(date, activeView);
+    const [prevEvents, currentEvents, nextEvents] = await Promise.all([
+      fetchWindowRef.current?.(prevDate, activeView, calendars) ?? Promise.resolve([]),
+      fetchWindowRef.current?.(date, activeView, calendars) ?? Promise.resolve([]),
+      fetchWindowRef.current?.(nextDate, activeView, calendars) ?? Promise.resolve([]),
+    ]);
+    if (fetchIdRef.current !== id) return;
+    dispatch({ type: "SET_PREV_WINDOW", payload: prevEvents });
+    dispatch({ type: "SET_CURRENT_WINDOW", payload: currentEvents });
+    dispatch({ type: "SET_NEXT_WINDOW", payload: nextEvents });
+  };
+
+  runFullRefreshRef.current = async () => {
     showToast("Loading calendars...", "loading");
     dispatch({ type: "SET_LOADING", payload: true });
     dispatch({ type: "SET_ERROR", payload: null });
-
     try {
-      const allCalendars = (
-        await Promise.all(
-          accounts.map((account) => plugin.api.getCalendarList(account))
-        )
-      ).flat();
-
-      const merged = allCalendars.map((cal) => {
-        const existing = state.calendars.find((c) => c.id === cal.id);
-        if (existing) return { ...cal, visible: existing.visible };
-        const persisted = plugin.data.calendarVisibility?.[cal.id];
-        return { ...cal, visible: persisted !== undefined ? persisted : cal.visible }
-      });
-
-      dispatch({ type: "SET_CALENDARS", payload: merged });
-
-      const { timeMin, timeMax } = getViewWindow(state.selectedDate, activeView);
-
-      const allEvents = (
-        await Promise.all(
-          merged
-            .filter((cal) => cal.visible)
-            .map((cal) => {
-              const account = accounts.find((a) => a.accountId === cal.accountId);
-              if (!account) return Promise.resolve([]);
-              return plugin.api.getEvents(account, cal.id, timeMin, timeMax);
-            })
-        )
-      ).flat();
-
-      dispatch({ type: "SET_EVENTS", payload: deduplicateEvents(allEvents) });
+      const calendars = await fetchCalendarsRef.current?.() ?? [];
+      await fetchAllWindowsRef.current?.(state.selectedDate, calendars);
       setToast(null);
     } catch (err) {
       showToast((err as Error).message, "error");
@@ -150,15 +212,80 @@ export default function CalendarPanel({ plugin }: Props) {
     dispatch({ type: "MERGE_EVENTS", payload: { calendarId, events } });
   };
 
-  useEffect(() => {
-    fetchAllRef.current?.();
-  }, [state.selectedDate, activeView]);
+  navigateNextRef.current = () => {
+    calendarRef.current?.getApi().next();
+    const newDate = calendarRef.current?.getApi().getDate();
+    if (!newDate) return;
+    dispatch({ type: "SET_DATE", payload: newDate });
 
+    if (state.windowEvents.next.length > 0) {
+      // Pre-loaded — instant shift, then prefetch new next in background.
+      const id = ++fetchIdRef.current;
+      dispatch({ type: "SHIFT_FORWARD" });
+      const { nextDate } = getAdjacentDates(newDate, activeView);
+      fetchWindowRef.current?.(nextDate, activeView).then((events) => {
+        if (fetchIdRef.current === id) dispatch({ type: "SET_NEXT_WINDOW", payload: events });
+      });
+    } else {
+      // Next window wasn't ready yet — fetch all 3 fresh.
+      fetchAllWindowsRef.current?.(newDate);
+    }
+  };
+
+  navigatePrevRef.current = () => {
+    calendarRef.current?.getApi().prev();
+    const newDate = calendarRef.current?.getApi().getDate();
+    if (!newDate) return;
+    dispatch({ type: "SET_DATE", payload: newDate });
+
+    if (state.windowEvents.prev.length > 0) {
+      // Pre-loaded — instant shift, then prefetch new prev in background.
+      const id = ++fetchIdRef.current;
+      dispatch({ type: "SHIFT_BACK" });
+      const { prevDate } = getAdjacentDates(newDate, activeView);
+      fetchWindowRef.current?.(prevDate, activeView).then((events) => {
+        if (fetchIdRef.current === id) dispatch({ type: "SET_PREV_WINDOW", payload: events });
+      });
+    } else {
+      // Prev window wasn't ready yet — fetch all 3 fresh.
+      fetchAllWindowsRef.current?.(newDate);
+    }
+  };
+
+  // ─── Effects ─────────────────────────────────────────────────────────────────
+
+  // Initial load — fetch calendar list + all 3 windows in parallel.
   useEffect(() => {
-    const interval = setInterval(() => fetchAllRef.current?.(), 5 * 60 * 1000);
+    (async () => {
+      showToast("Loading calendars...", "loading");
+      dispatch({ type: "SET_LOADING", payload: true });
+      dispatch({ type: "SET_ERROR", payload: null });
+      try {
+        const calendars = await fetchCalendarsRef.current?.() ?? [];
+        await fetchAllWindowsRef.current?.(state.selectedDate, calendars);
+        setToast(null);
+      } catch (err) {
+        showToast((err as Error).message, "error");
+      } finally {
+        dispatch({ type: "SET_LOADING", payload: false });
+        hasFetchedInitial.current = true;
+      }
+    })();
+  }, []);
+
+  // View change — fetch all 3 windows fresh. Date navigation is handled at call sites.
+  useEffect(() => {
+    if (!hasFetchedInitial.current) return;
+    fetchAllWindowsRef.current?.(state.selectedDate);
+  }, [activeView]);
+
+  // 5-minute poll — full refresh (calendar list + all 3 windows).
+  useEffect(() => {
+    const interval = setInterval(() => runFullRefreshRef.current?.(), 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
+  // Persist calendar visibility on every calendars change.
   useEffect(() => {
     if (state.calendars.length === 0) return;
     const visibility: Record<string, boolean> = {};
@@ -167,6 +294,7 @@ export default function CalendarPanel({ plugin }: Props) {
     plugin.saveData(plugin.data);
   }, [state.calendars]);
 
+  // ResizeObserver — tell FullCalendar to remeasure when the panel resizes.
   useEffect(() => {
     const el = calendarWrapperRef.current;
     if (!el) return;
@@ -179,11 +307,14 @@ export default function CalendarPanel({ plugin }: Props) {
     return () => observer.disconnect();
   }, []);
 
+  // Persist density.
   useEffect(() => {
     plugin.data.viewDensity = density;
     plugin.saveData(plugin.data);
   }, [density]);
 
+  // Wire commandBridge — empty deps so it registers once.
+  // nav refs are re-assigned every render so they always use the latest closure.
   useEffect(() => {
     plugin.commandBridge = {
       setView: (view: "day" | "3day" | "week") => {
@@ -194,31 +325,24 @@ export default function CalendarPanel({ plugin }: Props) {
         const today = new Date();
         dispatch({ type: "SET_DATE", payload: today });
         calendarRef.current?.getApi().today();
+        fetchAllWindowsRef.current?.(today);
       },
-      refresh: () => {
-        fetchAllRef.current?.();
-      },
-      next: () => {
-        calendarRef.current?.getApi().next();
-        const newDate = calendarRef.current?.getApi().getDate();
-        if (newDate) dispatch({ type: "SET_DATE", payload: newDate });
-      },
-      prev: () => {
-        calendarRef.current?.getApi().prev();
-        const newDate = calendarRef.current?.getApi().getDate();
-        if (newDate) dispatch({ type: "SET_DATE", payload: newDate });
-      },
+      refresh: () => { runFullRefreshRef.current?.(); },
+      next: () => navigateNextRef.current?.(),
+      prev: () => navigatePrevRef.current?.(),
     };
     return () => {
       plugin.commandBridge = null;
     };
   }, []);
 
+  // Persist active view.
   useEffect(() => {
     plugin.data.activeView = activeView;
     plugin.saveData(plugin.data);
   }, [activeView]);
 
+  // Close view popover on outside click.
   useEffect(() => {
     if (!viewPopoverOpen) return;
     const handler = (e: MouseEvent) => {
@@ -230,14 +354,51 @@ export default function CalendarPanel({ plugin }: Props) {
     return () => document.removeEventListener("mousedown", handler);
   }, [viewPopoverOpen]);
 
+  // ─── MiniMonth date selection ─────────────────────────────────────────────
+
   const handleDateSelect = (date: Date) => {
+    const { prevDate, nextDate } = getAdjacentDates(state.selectedDate, activeView);
+    const currentWindowStart = getViewWindow(state.selectedDate, activeView).timeMin;
+    const targetWindowStart = getViewWindow(date, activeView).timeMin;
+
     dispatch({ type: "SET_DATE", payload: date });
     calendarRef.current?.getApi().gotoDate(date);
+
+    if (targetWindowStart.getTime() === currentWindowStart.getTime()) {
+      // Same window — no data change needed.
+    } else if (targetWindowStart.getTime() === nextDate.getTime()) {
+      // One step forward.
+      if (state.windowEvents.next.length > 0) {
+        dispatch({ type: "SHIFT_FORWARD" });
+        const { nextDate: newNextDate } = getAdjacentDates(date, activeView);
+        fetchWindowRef.current?.(newNextDate, activeView).then((events) => {
+          dispatch({ type: "SET_NEXT_WINDOW", payload: events });
+        });
+      } else {
+        fetchAllWindowsRef.current?.(date);
+      }
+    } else if (targetWindowStart.getTime() === prevDate.getTime()) {
+      // One step back.
+      if (state.windowEvents.prev.length > 0) {
+        dispatch({ type: "SHIFT_BACK" });
+        const { prevDate: newPrevDate } = getAdjacentDates(date, activeView);
+        fetchWindowRef.current?.(newPrevDate, activeView).then((events) => {
+          dispatch({ type: "SET_PREV_WINDOW", payload: events });
+        });
+      } else {
+        fetchAllWindowsRef.current?.(date);
+      }
+    } else {
+      // Arbitrary jump — fetch all 3 fresh.
+      fetchAllWindowsRef.current?.(date);
+    }
   };
+
+  // ─── FC events — filter from current window only ─────────────────────────
 
   const fcEvents = useMemo(
     () =>
-      state.events
+      state.windowEvents.current
         .filter(
           (e) =>
             (state.calendars.find((c) => c.id === e.calendarId)?.visible ?? false) &&
@@ -254,8 +415,10 @@ export default function CalendarPanel({ plugin }: Props) {
           borderColor: "rgba(0, 0, 0, 0.4)",
           extendedProps: { calEvent: e },
         })),
-    [state.events, state.calendars]
+    [state.windowEvents.current, state.calendars]
   );
+
+  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div className="gcal-panel-container">
@@ -267,6 +430,7 @@ export default function CalendarPanel({ plugin }: Props) {
               const today = new Date();
               dispatch({ type: "SET_DATE", payload: today });
               calendarRef.current?.getApi().today();
+              fetchAllWindowsRef.current?.(today);
             }}
             className="gcal-panel-btn-icon"
             title="Go to today"
@@ -274,22 +438,14 @@ export default function CalendarPanel({ plugin }: Props) {
             T
           </button>
           <button
-            onClick={() => {
-              calendarRef.current?.getApi().prev();
-              const newDate = calendarRef.current?.getApi().getDate();
-              if (newDate) dispatch({ type: "SET_DATE", payload: newDate });
-            }}
+            onClick={() => navigatePrevRef.current?.()}
             className="gcal-panel-btn-icon"
             title="Previous"
           >
             ‹
           </button>
           <button
-            onClick={() => {
-              calendarRef.current?.getApi().next();
-              const newDate = calendarRef.current?.getApi().getDate();
-              if (newDate) dispatch({ type: "SET_DATE", payload: newDate });
-            }}
+            onClick={() => navigateNextRef.current?.()}
             className="gcal-panel-btn-icon"
             title="Next"
           >
@@ -310,7 +466,7 @@ export default function CalendarPanel({ plugin }: Props) {
 
         <div className="gcal-panel-header-left">
           <button
-            onClick={() => fetchAllRef.current?.()}
+            onClick={() => runFullRefreshRef.current?.()}
             disabled={state.isLoading}
             className="gcal-panel-btn-icon"
             title="Refresh calendars"
