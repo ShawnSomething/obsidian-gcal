@@ -1160,6 +1160,7 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 | RecurringModal flag sync | hideThis, hideFollowing, showAll must be kept in sync across RecurringModalProps, recurringModalState type, askRecurring opts type, and EditProps.askRecurring type | Missing any one causes a TypeScript error at the call site |
 | Recurring instance RRULE missing | Instances don't carry recurrence array — it lives on the master only | Fixed: eventClick fetches master on recurring instance click, merges recurrence onto instance before opening modal. Falls through gracefully on fetch failure. |
 | eventClick master fetch failure | getEvent call fails (network, auth) | Falls through silently — modal opens without recurrence data. Repeat checkbox shows unchecked. User can still edit other fields. Acceptable degradation. |
+| splitRecurringSeries recurrence not passed through | `updates` shape in `splitRecurringSeries` was missing `recurrence?` field — new series always inherited original RRULE regardless of what user configured. Fix: add `recurrence?: string[]` to updates type in both `splitRecurringSeries` and `EditProps.onSplitSeries`, use `updates.recurrence ?? originalRecurrence` in POST step. |
 
 ---
 
@@ -1273,6 +1274,8 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 | hideThis prop | Added to RecurringModal, recurringModalState, askRecurring opts, EditProps.askRecurring | All four must stay in sync when adding new RecurringModal display flags |
 | Recurring instance RRULE display | Fetch master event on eventClick, merge recurrence onto instance before opening modal | Instances don't carry recurrence array — only the master does. Accuracy chosen over avoiding the extra API call. Loading toast shown while fetch is in-flight. Cache considered and rejected — adds staleness risk, and sub-second latency is acceptable. |
 | Recurring instance eventClick master fetch | `getEvent(account, calendarId, calEvent.recurringEventId)` on click | Falls through gracefully if fetch fails — modal opens without recurrence data rather than blocking entirely. |
+| splitRecurringSeries recurrence field | Add `recurrence?: string[]` to updates type; use `updates.recurrence ?? originalRecurrence` in POST | Without this, the new series always inherits the original RRULE regardless of what the user configured in EventModal. The user's new RRULE was being silently dropped. |
+| onSplitSeries type — recurrence field | Added `recurrence?: string[]` to `EditProps.onSplitSeries` type | EventModal was already building and passing recurrence in the updates object — it just wasn't declared in the type, so splitRecurringSeries couldn't see it. |
 
 ---
 
@@ -1294,18 +1297,9 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 - Phase 7.5: CANCELLED — auth simplification deferred indefinitely (see section 5.20)
 - Phase 8: DONE — plugin submitted to Obsidian Community, automated review in progress
 - Phase 9: DONE
+- Phase 10 (Performance): IN PROGRESS — see section 14
 
-### Post-release incremental fixes — COMPLETE
-
-- RSVP buttons (Yes / Maybe / No) were missing from EventModal — re-added below guests section
-- Repeat checkbox moved to just below the datetime row (above the divider + description), in both edit and create modes
-- `parseRRule()` helper added to EventModal — reads existing RRULE string back into frequency/interval/days/endType state
-- Recurrence state now pre-populates from existing RRULE on edit mode open
-- Editing the RRULE on a recurring event now routes through RecurringModal with `hideThis: true` (only "This and following" and "All events" shown)
-- `hideThis` prop added to `RecurringModal`, `recurringModalState`, `askRecurring` opts, and `EditProps.askRecurring` type
-- Recurring instance RRULE fix: `eventClick` now fetches master event for recurring instances, merges `recurrence` onto instance before opening modal. Loading toast shown while in-flight. Falls through gracefully on error.
-
-**No pending items.**
+**Next up:** Phase 10 Step 1 — split fetchCalendars / fetchEvents in CalendarPanel.tsx
 
 ### README notes
 - README lives at repo root
@@ -1318,6 +1312,7 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 - Obsidian submission: via `community.obsidian.md` developer dashboard (new system as of 2026 — no PR to obsidian-releases required)
 - Repo is public: `https://github.com/ShawnSomething/obsidian-gcal`
 - Default branch: `master` (not `main` — main was the empty template, all code is on master)
+
 ---
 
 ## 13. Post-Release Session — Recurring Edit Fixes (May 2026)
@@ -1339,49 +1334,50 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 - Fix 2: In `EventModal.tsx` `handleSave`, added explicit `if (choice === "all")` branch that passes `targetEventId: editProps.event.recurringEventId` and returns
 - Fix 3: In `CalendarPanel.tsx` `onSave` handler, destructure `targetEventId` from updates and use `targetId = targetEventId ?? editingEvent.id` for the `putEvent` call
 
-**Bug — "This and following" not updating Google Calendar (UNRESOLVED)**
-- Symptom: "Series split" success toast appears, all network requests return 200, but Google Calendar is completely unchanged
-- Confirmed: not a UI refresh issue — Google Calendar itself shows no change
-- All 8 network requests in the split flow return 200 (preflight + fetch pairs)
-- `splitRecurringSeries` does: GET master → PATCH master RRULE with UNTIL → DELETE instance → POST new series
-- All steps return 200 but the changes don't persist on Google's side
-- Hypothesis not yet confirmed: Google may be silently accepting but ignoring the PATCH if the UNTIL date calculation is wrong, or the DELETE 200 is actually a no-op (410 gone but treated as success), or the POST is creating the new series somewhere unexpected
-- **Next thread: start by logging the full request bodies for each step in `splitRecurringSeries` to confirm what's actually being sent**
+**Bug fix — "This and following" not updating Google Calendar (FIXED)**
+- Symptom: "Series split" success toast appeared, all network requests returned 200, but Google Calendar was completely unchanged
+- Root cause: `splitRecurringSeries` `updates` type was missing `recurrence?: string[]`. The new series POST was always using `recurrence: originalRecurrence` (the master's RRULE), ignoring whatever the user configured in EventModal. Additionally, `EditProps.onSplitSeries` type also lacked the `recurrence` field, so even though EventModal was building and passing it, the type prevented it reaching `splitRecurringSeries`.
+- Fix 1: Added `recurrence?: string[]` to the `updates` parameter type in `splitRecurringSeries` in `GoogleCalendarAPI.ts`
+- Fix 2: Changed POST step from `recurrence: originalRecurrence` to `recurrence: updates.recurrence ?? originalRecurrence`
+- Fix 3: Added `recurrence?: string[]` to `EditProps.onSplitSeries` type in `EventModal.tsx`
+- CalendarPanel needed no changes — it passes `updates` straight through
 
-### Current file states needed for next thread
-Paste these files at the start of the next thread:
-- `src/api/GoogleCalendarAPI.ts` — specifically `splitRecurringSeries` method
-- `src/components/EventModal.tsx` — specifically `handleSave` and the recurrence block
-- `src/components/CalendarPanel.tsx` — specifically `onSave` and `onSplitSeries` handlers
+**Debugging approach used:**
+- Added `console.log` instrumentation to all steps of `splitRecurringSeries` to log request bodies and response bodies
+- Key insight from logs: PATCH returned 200 with correct UNTIL, DELETE returned 204, POST returned 200 — all steps succeeded. Issue was not network/auth. The POST body showed `recurrence: ["RRULE:FREQ=DAILY"]` instead of the user's new RRULE, which identified the exact problem.
+- Always log the full request body (not just status) when debugging API calls that return 200 but don't produce the expected result.
 
 ### Key code changes from this session
 
-**EventModal.tsx EditProps type:**
+**GoogleCalendarAPI.ts — splitRecurringSeries updates type:**
 ```typescript
-onSave: (updates: { title: string; start: string; end: string; allDay: boolean; location?: string; description?: string; recurrence?: string[]; targetEventId?: string }) => Promise<void>;
-```
-
-**EventModal.tsx handleSave — recurringEventId block:**
-```typescript
-if (editProps.event.recurringEventId) {
-  const choice = await editProps.askRecurring(editProps.event, { hideThis: true, showAll: true });
-  if (!choice) return;
-  if (choice === "following") {
-    await editProps.onSplitSeries(updates);
-    return;
-  }
-  if (choice === "all") {
-    await editProps.onSave({ ...updates, targetEventId: editProps.event.recurringEventId });
-    return;
-  }
+updates: {
+    title: string;
+    start: string;
+    end: string;
+    allDay: boolean;
+    location?: string;
+    description?: string;
+    recurrence?: string[];  // ← added
 }
 ```
 
-**CalendarPanel.tsx onSave handler — putEvent call:**
+**GoogleCalendarAPI.ts — POST step:**
 ```typescript
-const { targetEventId, ...putUpdates } = updates;
-const targetId = targetEventId ?? editingEvent.id;
-const updated = await plugin.api.putEvent(account, editingEvent.calendarId, targetId, putUpdates);
+// before
+recurrence: originalRecurrence,
+
+// after
+recurrence: updates.recurrence ?? originalRecurrence,
+```
+
+**EventModal.tsx — EditProps.onSplitSeries type:**
+```typescript
+// before
+onSplitSeries: (updates: { title: string; start: string; end: string; allDay: boolean; location?: string; description?: string }) => Promise<void>;
+
+// after
+onSplitSeries: (updates: { title: string; start: string; end: string; allDay: boolean; location?: string; description?: string; recurrence?: string[] }) => Promise<void>;
 ```
 
 ### Decisions from this session
@@ -1391,4 +1387,61 @@ const updated = await plugin.api.putEvent(account, editingEvent.calendarId, targ
 | Repeat UI layout | Inline rows (Every/On/End) | More ergonomic, matches iOS Calendar UX |
 | Frequency labels | Day/Week/Month/Year (not Daily/Weekly) | Shorter, matches reference design |
 | "All events" ID routing | Pass `targetEventId` through updates shape | Cleanest way to route master ID from EventModal through CalendarPanel without adding a new prop |
-| "This and following" debug approach | Log full request bodies next session | All 200s means the issue is in what's being sent, not the auth or network layer |
+| splitRecurringSeries recurrence | `updates.recurrence ?? originalRecurrence` | User's new RRULE must be used; fall back to original only if recurrence wasn't changed |
+| Debug approach for silent 200s | Log full request body, not just status | When all steps return 200 but nothing changes, the bug is in what's being sent — log the body to find it |
+
+---
+
+## 14. Phase 10 — Performance (In Progress)
+
+### Problem
+Navigation between days/weeks takes ~2 seconds. Confirmed via network tab:
+- `calendarList` calls: ~35ms — not the problem
+- `events` calls: 500–919ms each — Google API latency, unavoidable
+- CORS preflights (~300ms) on every request — caused by `Authorization` header, cannot be eliminated, not the bottleneck
+- 6 calendars across 2 accounts tested. Other users may have more.
+
+### Root Cause
+`fetchAllRef` fetches calendarList then events sequentially on every navigation. CalendarList almost never changes — fetching it on every date/view change is wasteful and creates a sequential dependency that delays event fetches.
+
+### Plan (2 steps, do in order)
+
+**Step 1 — Split fetchCalendars and fetchEvents** ← NEXT
+Split `fetchAllRef` into two separate functions.
+
+`fetchCalendars` runs on:
+- Initial load
+- Every 5-min poll (must complete before fetchEvents — sequential, not parallel, because events fetch requires calendar list)
+- When an account is added/removed in settings
+
+`fetchEvents` runs on:
+- Navigation (date or view change) — uses `state.calendars` already in memory, no calendarList call
+- As second step of every poll (after fetchCalendars resolves)
+
+Key win: navigation skips calendarList entirely. Straight to event fetches against already-loaded `state.calendars`.
+
+Calendar visibility toggle stays client-side only — no refetch, filters from memory. Unchanged.
+
+Files affected: `CalendarPanel.tsx` only. `GoogleCalendarAPI.ts` unchanged.
+
+**Step 2 — Sliding Window Prefetch** (do after Step 1 is validated)
+Preload adjacent windows while user is on current window. Hides Google API latency behind user think time.
+
+Design:
+- State holds 3 windows: `prev`, `current`, `next`
+- On navigation: old `next` → `current`, old `current` → `prev`, fetch new `next`, drop old `prev`
+- Poll refreshes all 3 windows (accuracy is priority — no stale windows)
+- `fcEvents` filters to render current window events only (FC must not receive 3x events)
+- Day view: prev/next = adjacent days; Week view: prev/next = adjacent weeks; 3day: adjacent 3-day blocks
+- Step 1 is a prerequisite — `fetchEvents` must be independent before it can be called per window
+
+### Decisions
+
+| Decision | Choice | Reason |
+|---|---|---|
+| CORS preflights | Accept as-is | Caused by Authorization header — unavoidable |
+| calendarList on navigation | Remove | Calendars don't change on nav — wasteful |
+| calendarList + events parallel | Not possible | Events fetch requires calendar list |
+| calendarList on toggle | No refetch | Toggle is client-side filter |
+| Poll scope for sliding windows | All 3 windows | Accuracy is priority — stale adjacent windows not acceptable |
+| Build order | Split first, then sliding windows | Split is prerequisite; validate independently |

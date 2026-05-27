@@ -179,7 +179,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 845.5
+    "width": 652.5
   },
   "left-ribbon": {
     "hiddenItems": {
@@ -193,7 +193,7 @@
       "gcal-sidebar:GCal Sidebar": false
     }
   },
-  "active": "15c8d250579361da",
+  "active": "e8a2912b543ed0ed",
   "lastOpenFiles": [
     "2026-05-24.md",
     "Welcome.md",
