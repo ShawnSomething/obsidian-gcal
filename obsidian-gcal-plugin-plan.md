@@ -1,7 +1,7 @@
 # Obsidian Google Calendar Plugin — PRD + Tech Design
 
 ## Status
-`Complete` — Started May 2026
+`In Progress — Phase 10 Step 2` — Started May 2026
 
 ---
 
@@ -148,12 +148,12 @@ React Context + useReducer. No external state library.
 
 `CalendarContext.tsx` provides:
 - `calendars: CalendarMeta[]`
-- `events: CalEvent[]`
+- `windowEvents: { prev: CalEvent[], current: CalEvent[], next: CalEvent[] }` ← UPDATED in Phase 10 Step 2 (was `events: CalEvent[]`)
 - `activeView: "day" | "3day" | "week"`
 - `selectedDate: Date`
 - `isLoading: boolean`
 - `error: string | null`
-- `dispatch` — actions: `SET_EVENTS`, `SET_CALENDARS`, `TOGGLE_CALENDAR`, `SET_VIEW`, `SET_DATE`, `SET_LOADING`, `SET_ERROR`, `UPDATE_EVENT`, `ADD_EVENT`, `REMOVE_EVENT`, `MERGE_EVENTS`
+- `dispatch` — actions: `SET_CURRENT_WINDOW`, `SET_PREV_WINDOW`, `SET_NEXT_WINDOW`, `SHIFT_FORWARD`, `SHIFT_BACK`, `SET_CALENDARS`, `TOGGLE_CALENDAR`, `SET_VIEW`, `SET_DATE`, `SET_LOADING`, `SET_ERROR`, `UPDATE_EVENT`, `ADD_EVENT`, `REMOVE_EVENT`, `MERGE_EVENTS`
 
 Note: `accounts` is NOT in context — read directly from `plugin.data.accounts` at fetch time.
 
@@ -264,7 +264,7 @@ On load + every 5 minutes (setInterval in CalendarPanel useEffect):
    - `singleEvents=true`
    - `maxResults=250`
 4. Merge all events, deduplicate by `iCalUID + start` (not `iCalUID` alone — recurring instances share `iCalUID` but have different `start` values)
-5. Dispatch `SET_EVENTS`
+5. Dispatch `SET_CURRENT_WINDOW`
 6. On view date change → refetch immediately
 
 **fetchAllRef pattern** — interval uses a ref to avoid stale closures without resetting the polling interval on every state change:
@@ -289,17 +289,7 @@ fetchCalendarRef.current = async (calendarId: string, accountId: string) => {
 };
 ```
 
-`MERGE_EVENTS` reducer replaces all events for that `calendarId` with the fresh list, leaving all other calendars' events untouched:
-```typescript
-case "MERGE_EVENTS":
-  return {
-    ...state,
-    events: [
-      ...state.events.filter((e) => e.calendarId !== action.payload.calendarId),
-      ...action.payload.events,
-    ],
-  };
-```
+`MERGE_EVENTS` reducer replaces all events for that `calendarId` with the fresh list in `windowEvents.current`, leaving all other calendars' events untouched.
 
 No toast inside `fetchCalendarRef` — the caller already has a toast running.
 
@@ -1059,51 +1049,93 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 ### Phase 7 — Publish Prep
 
   7.1 Performance ✅ DONE
-  - [x] Grid line opacity — reduce calendar grid line opacity via CSS
-  - [x] Optimistic updates — single-event write ops return `Promise<CalEvent>`, dispatch UPDATE_EVENT/ADD_EVENT/REMOVE_EVENT directly
-  - [x] Parallel fetches — confirmed already implemented via `Promise.all`. No change needed.
-  - [x] Targeted single-calendar refetch — `fetchCalendarRef` pattern added. `MERGE_EVENTS` action in reducer. Used after splitRecurringSeries, deleteRecurringAndFollowing, and recurring postEvent. Cuts N-calendar refetch to 1.
-  - [x] Recurring create instances — `postEvent` with recurrence uses `fetchCalendarRef` instead of `ADD_EVENT` so all instances appear immediately without a manual refresh.
-  - [x] Add repeat to existing event — Repeat UI shown in edit mode for non-recurring events. `putEvent` signature extended with `recurrence?: string[]`. Google requires `timeZone` in start/end when recurrence is present — use `Intl.DateTimeFormat().resolvedOptions().timeZone`. CalendarPanel `onSave` branches on `updates.recurrence?.length`: fetchCalendarRef if set, UPDATE_EVENT dispatch if not.
-
   7.2 Robustness ✅ DONE
-  - [x] Error handling + user-facing messages for all failure cases
-
   7.3 Keyboard Shortcuts ✅ DONE
-    - [x] Open calendar leaf — `this.addCommand()` in `main.ts`
-    - [x] Toggle active view — Day / 3-day / Week as separate commands (not cycling)
-    - [x] Jump to today
-    - [x] Refresh
-    - [x] Next / Previous navigation
-    - [x] Open/close behaviour — expands sidebar + reveals gcal leaf; collapses sidebar if gcal already active
-    - **Bridge pattern:** `CommandBridge` interface on plugin class, registered by CalendarPanel on mount, nulled on unmount
-
   7.4 Plugin Identity ✅ DONE
-  - [x] Plugin renamed from "Sample Plugin" to "GCal Sidebar"
-  - [x] `manifest.json` updated — id: `gcal-sidebar`, name: `GCal Sidebar`, isDesktopOnly: true, description updated, author updated
-  - [x] Custom SVG calendar icon with "GC" text registered via `addIcon("gcal-icon", ...)` in `main.ts`
-  - [x] `CalendarView.getDisplayText()` returns `"GCal Sidebar"`
-  - [x] `CalendarView.getIcon()` returns `"gcal-icon"`
-  - [x] `SettingsTab` heading updated to "GCal Sidebar"
-  - [x] Ribbon icon updated to use `"gcal-icon"`
-  - [x] Plugin symlink folder renamed from `cbsidian-gcal` → `gcal-sidebar` to match manifest id
-
   7.5 Auth Simplification ✅ DECIDED — DEFERRED INDEFINITELY
-  - **Decision: do not bundle credentials. Keep user-supplied GCP credentials as the only auth path.**
-  - Full rationale in section 5.20.
-  - Phase 7.5 tasks are cancelled. No code changes needed.
-  - Future path: apply for Google OAuth verification post-publish (eliminates warning screen, no code change). Build proxy only if quota exhaustion becomes real at scale.
 
 ### Phase 8 — Release ✅ DONE
-  - [x] README with GCP setup guide — screenshots in `assets/` folder at repo root, referenced as `assets/image.png`
-  - [x] GitHub release created — tag `1.0.0` on `master`, attached `main.js`, `manifest.json`, `styles.css` as release assets
-  - [x] Submitted to Obsidian Community via new developer dashboard at `community.obsidian.md` — automated review in progress
+  - [x] README with GCP setup guide
+  - [x] GitHub release created — tag `1.0.0` on `master`
+  - [x] Submitted to Obsidian Community via `community.obsidian.md` — automated review in progress
   - [x] Repo made public before submission
-  - [x] Default branch switched from `main` to `master` (all code was on `master`, `main` was the empty template)
+  - [x] Default branch switched from `main` to `master`
 
-### Phase 9 - Post Release
+### Phase 9 — Post Release ✅ DONE
   - [x] Add optional donation payment method at the top and bottom of the readme
   - [x] Add optional donation payment method at the bottom of the settings panel
+
+### Phase 10 — Performance (In Progress)
+
+  **Step 1 — Split fetchCalendars and fetchEvents ✅ DONE**
+
+  Split `fetchAllRef` into three refs in `CalendarPanel.tsx`:
+  - `fetchCalendarsRef` — fetches calendarList only, dispatches `SET_CALENDARS`, returns merged `CalendarMeta[]`
+  - `fetchEventsRef` — fetches events only. Takes optional `calendars?: CalendarMeta[]` arg
+  - `runFullRefreshRef` — orchestrates both. Used by poll, manual refresh, commandBridge
+
+  Call sites:
+  - Initial load: dedicated mount `useEffect` → `fetchCalendarsRef` → `fetchEventsRef(calendars)`, sets `hasFetchedInitial.current = true` in finally
+  - Navigation: `useEffect([state.selectedDate, activeView])` calls `fetchEventsRef()` only — guarded with `if (!hasFetchedInitial.current) return`
+  - Poll: `setInterval` → `runFullRefreshRef`
+  - Manual refresh + `commandBridge.refresh` → `runFullRefreshRef`
+
+  Key win: navigation skips calendarList. ~35ms eliminated per nav press.
+
+  Files affected: `CalendarPanel.tsx` only.
+
+  **Step 2 — Sliding Window Prefetch ← NEXT**
+
+  **Problem being solved:** Navigation takes ~500–900ms because events fetch happens on demand. Users frequently toggle between today and tomorrow — the previous window loads cold every time.
+
+  **Design:**
+
+  Context state shape changes:
+  - `events: CalEvent[]` → `windowEvents: { prev: CalEvent[], current: CalEvent[], next: CalEvent[] }`
+
+  New actions in `CalendarContext.tsx`:
+  - `SET_CURRENT_WINDOW` — sets `windowEvents.current`
+  - `SET_PREV_WINDOW` — sets `windowEvents.prev`
+  - `SET_NEXT_WINDOW` — sets `windowEvents.next`
+  - `SHIFT_FORWARD` — atomically: `prev = current`, `current = next`, `next = []`
+  - `SHIFT_BACK` — atomically: `next = current`, `current = prev`, `prev = []`
+
+  Existing actions `UPDATE_EVENT`, `ADD_EVENT`, `REMOVE_EVENT`, `MERGE_EVENTS` operate on `windowEvents.current` only.
+
+  New helper in `CalendarPanel.tsx`:
+  - `getAdjacentDates(date, view)` → `{ prevDate: Date, nextDate: Date }` — returns the date for the prev and next windows
+
+  New ref in `CalendarPanel.tsx`:
+  - `fetchWindowRef` — fetches events for any given date/view, returns `CalEvent[]`, no dispatch. Used by prefetch logic.
+
+  Navigation flow (forward):
+  1. `SHIFT_FORWARD` — `next` becomes `current` instantly (render is immediate, no loading state)
+  2. Fetch new `next` window in background (fire-and-forget, dispatch `SET_NEXT_WINDOW` when done)
+  3. Old `prev` is dropped
+
+  Navigation flow (back):
+  1. `SHIFT_BACK` — `prev` becomes `current` instantly
+  2. Fetch new `prev` window in background
+  3. Old `next` is dropped
+
+  Initial load:
+  - Fetch all 3 windows in parallel (Promise.all) → dispatch `SET_PREV_WINDOW`, `SET_CURRENT_WINDOW`, `SET_NEXT_WINDOW`
+
+  Poll/manual refresh:
+  - Re-fetch all 3 windows. Stale adjacent windows are not acceptable.
+
+  `fcEvents` useMemo:
+  - Filters from `windowEvents.current` only — FC never sees prev/next data
+
+  `fetchCalendarRef` (single-calendar refetch after write ops):
+  - Operates on `current` only. Updates `windowEvents.current` via `MERGE_EVENTS`.
+  - Adjacent windows become stale after a write — acceptable. They'll refresh on next nav or poll.
+
+  **Why keep `prev`:** Users toggle between today and tomorrow constantly. Once you navigate forward, `prev` (today) is already loaded — back-navigation is instant.
+
+  **Files affected:** `CalendarContext.tsx` and `CalendarPanel.tsx`.
+
+  `CalendarMeta` must be exported from `CalendarContext.tsx`.
 
 ---
 
@@ -1144,7 +1176,8 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 | Toast cancel path on delete | When user cancels recurring modal during delete, call `setToast(null)` to clear the "Deleting..." loading toast — otherwise it hangs indefinitely. |
 | EventModal onSave Promise type | `onSave` and `onSplitSeries` must be typed as `Promise<void>`, not `void` — otherwise `await` in `handleSave` silently does nothing and `isSaving` never resets. |
 | fetchCalendarRef has no toast | Caller already has a toast running — do not add a toast inside fetchCalendarRef. It would conflict with the caller's loading/success toast sequence. |
-| Recurring create missing instances | `postEvent` only returns the master event. Use `fetchCalendarRef` when `recurrence?.length` is set — not `ADD_EVENT` — so all instances appear immediately. |
+| fetchEventsRef on mount with empty calendars | Guard navigation useEffect with `if (!hasFetchedInitial.current) return` | Without guard, navigation useEffect fires on mount before initial load completes and fetches nothing — silently broken |
+| CalendarMeta not exported | Add `export` to CalendarMeta interface in CalendarContext.tsx | fetchCalendarsRef return type requires it |
 | putEvent with recurrence — missing timeZone | Google returns 400 "Missing timeZone" when recurrence is added via PUT without timeZone in start/end. Always include `timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone` in start/end fields when recurrence is present. |
 | EventModal repeat UI in edit mode — TypeScript narrowing | Do NOT hoist `(props as EditProps)` to a component-level variable to use in JSX conditions — it causes narrowing errors throughout the component. Use inline cast `(props as EditProps).event.recurringEventId` directly in the JSX condition. |
 | putEvent recurrence post-write state | PUT response only returns master event, not instances. Branch in CalendarPanel onSave: if `updates.recurrence?.length` → fetchCalendarRef; else → UPDATE_EVENT dispatch. |
@@ -1161,6 +1194,9 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 | Recurring instance RRULE missing | Instances don't carry recurrence array — it lives on the master only | Fixed: eventClick fetches master on recurring instance click, merges recurrence onto instance before opening modal. Falls through gracefully on fetch failure. |
 | eventClick master fetch failure | getEvent call fails (network, auth) | Falls through silently — modal opens without recurrence data. Repeat checkbox shows unchecked. User can still edit other fields. Acceptable degradation. |
 | splitRecurringSeries recurrence not passed through | `updates` shape in `splitRecurringSeries` was missing `recurrence?` field — new series always inherited original RRULE regardless of what user configured. Fix: add `recurrence?: string[]` to updates type in both `splitRecurringSeries` and `EditProps.onSplitSeries`, use `updates.recurrence ?? originalRecurrence` in POST step. |
+| Sliding window — write ops stale adjacent windows | `fetchCalendarRef` only updates `windowEvents.current`. Adjacent windows go stale after a write. Acceptable — they refresh on next nav or poll. |
+| Sliding window — nav direction detection | `SHIFT_FORWARD` vs `SHIFT_BACK` must be chosen correctly on nav. Use FC's `next()`/`prev()` buttons and `commandBridge.next()`/`prev()` as the trigger — they know direction. MiniMonth date jumps must determine direction by comparing new date to current date. |
+| Sliding window — MiniMonth arbitrary jump | If user jumps more than one window via MiniMonth, `prev`/`next` are no longer adjacent. On arbitrary jump: skip shift, fetch all 3 windows fresh. Detect by comparing jump distance to current window size. |
 
 ---
 
@@ -1190,21 +1226,20 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 | Week start | firstDay=1 | Monday start matches AU/EU convention |
 | Locale | enAU from @fullcalendar/core/locales/en-au | DD/MM date format, non-US |
 | EventModal timezone | toLocalInput() + new Date().toISOString() | datetime-local has no tz awareness; manual offset reattachment causes double-shift bug |
-| EventModal fields (v1) | Title, start, end, all-day only | Guests/location/description require full event fetch — deferred to later phase |
 | Recurring modal options (edit/drag) | "This event" + "This and following" only — no "All events" | "All events" is the destructive option users avoid; "this and following" is the natural UX choice |
 | Recurring modal options (RSVP) | "This event" + "All events" only — no "This and following" | Google API does not support "this and following" for attendee response PATCH |
 | RecurringModal state pattern | Promise-based askRecurring in CalendarPanel | Single state location, clean callers — both eventDrop and EventModal await the same function |
 | askRecurring opts param | Optional second arg `{ title?, hideFollowing?, showAll? }` | Allows same function to serve both edit and RSVP contexts without duplicating modal state |
 | Styles | All styles in styles.css using gcal- prefixed classes | No inline styles — shared classes (gcal-modal-backdrop, gcal-input, etc.) reused across components |
 | Post-write state sync | Response body for single-event ops; fetchCalendarRef for multi-step ops | Single-event PATCH/PUT/POST return the updated event — use it directly. splitRecurringSeries and deleteRecurringAndFollowing are multi-step; use fetchCalendarRef instead of full refetch. |
-| MERGE_EVENTS action | Added to CalendarContext reducer | Replaces all events for one calendarId, leaves others untouched. Used by fetchCalendarRef. |
+| MERGE_EVENTS action | Added to CalendarContext reducer | Replaces all events for one calendarId, leaves others untouched. Used by fetchCalendarRef. In Phase 10 Step 2: operates on windowEvents.current only. |
 | Targeted refetch scope | fetchCalendarRef — one calendar only | splitRecurringSeries and deleteRecurringAndFollowing are confined to a single calendarId. Targeted fetch is accurate and cuts N requests to 1. |
 | Recurring create post-write | fetchCalendarRef instead of ADD_EVENT when recurrence is set | postEvent only returns master event. All instances need a fetch to appear. Non-recurring creates still use ADD_EVENT (faster). |
-| ADD_EVENT / REMOVE_EVENT actions | Added to CalendarContext reducer | CREATE uses ADD_EVENT with response body. DELETE uses REMOVE_EVENT by ID. No refetch needed for either. |
+| ADD_EVENT / REMOVE_EVENT actions | Added to CalendarContext reducer | CREATE uses ADD_EVENT with response body. DELETE uses REMOVE_EVENT by ID. No refetch needed for either. In Phase 10 Step 2: both operate on windowEvents.current. |
 | mapItem helper | Private method in GoogleCalendarAPI.ts | Removes duplicated Google API → CalEvent mapping across getEvents, postEvent, putEvent, patchEventTimes, patchAttendeeResponse. |
 | API method return types | postEvent, patchEventTimes, putEvent, patchAttendeeResponse return `Promise<CalEvent>` | Required to use response body for state update without a second GET call. |
 | FullCalendar event updates | calendarRef mutation (getEventById + setProp/setStart/setEnd) + UPDATE_EVENT dispatch | events prop re-render causes duplicates — ref mutation is the only safe way to visually update a FC event without remounting the event source |
-| fcEvents memoization | useMemo keyed on [state.events, state.calendars] | Inline computation produces new array reference every render — FC treats each new reference as a new event source |
+| fcEvents memoization | useMemo keyed on [state.windowEvents.current, state.calendars] | Filters from current window only. FC never sees prev/next data. |
 | splitRecurringSeries UNTIL source | Use `instance.start`, not `updates.start` | UNTIL must reflect the original occurrence time the master series knows about, not the user's edited time |
 | EventModal modes | Discriminated union `type Props = EditProps \| CreateProps` | Clean separation — create mode drops askRecurring/onSplitSeries entirely. TypeScript only narrows discriminated unions via direct `props.mode === "x"` checks — derived booleans (`isCreate`) and `as` casts do NOT narrow |
 | Calendar write filter | Filter by `accessRole === "owner" \|\| "writer"` in create modal dropdown | `minAccessRole=reader` returns all visible calendars including read-only — must filter for write operations |
@@ -1272,10 +1307,20 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 | parseRRule location | Helper function in EventModal.tsx | Only used in EventModal; no benefit to exporting it |
 | Editing RRULE on recurring events | Routes through RecurringModal with hideThis=true | "This event only" makes no sense for a recurrence rule change — you can't give one instance a different repeat rule |
 | hideThis prop | Added to RecurringModal, recurringModalState, askRecurring opts, EditProps.askRecurring | All four must stay in sync when adding new RecurringModal display flags |
-| Recurring instance RRULE display | Fetch master event on eventClick, merge recurrence onto instance before opening modal | Instances don't carry recurrence array — only the master does. Accuracy chosen over avoiding the extra API call. Loading toast shown while fetch is in-flight. Cache considered and rejected — adds staleness risk, and sub-second latency is acceptable. |
+| Recurring instance RRULE display | Fetch master event on eventClick, merge recurrence onto instance before opening modal | Instances don't carry recurrence array — only the master does. Accuracy chosen over avoiding the extra API call. Loading toast shown while fetch is in-flight. Cache considered and rejected — adds staleness risk, and sub-second latency is acceptable. NOT DOING CACHE!|
 | Recurring instance eventClick master fetch | `getEvent(account, calendarId, calEvent.recurringEventId)` on click | Falls through gracefully if fetch fails — modal opens without recurrence data rather than blocking entirely. |
 | splitRecurringSeries recurrence field | Add `recurrence?: string[]` to updates type; use `updates.recurrence ?? originalRecurrence` in POST | Without this, the new series always inherits the original RRULE regardless of what the user configured in EventModal. The user's new RRULE was being silently dropped. |
 | onSplitSeries type — recurrence field | Added `recurrence?: string[]` to `EditProps.onSplitSeries` type | EventModal was already building and passing recurrence in the updates object — it just wasn't declared in the type, so splitRecurringSeries couldn't see it. |
+| fetchCalendars on navigation | Removed — navigation calls fetchEventsRef only | Calendar list doesn't change on nav — wasteful to refetch |
+| hasFetchedInitial ref | Guards navigation useEffect from running on mount | state.calendars is empty on mount — fetchEventsRef against empty list fetches nothing |
+| fetchEventsRef calendars param | Optional CalendarMeta[] arg | Lets initial load and poll pass fresh calendars directly without a state round-trip |
+| runFullRefreshRef | Composes fetchCalendarsRef + fetchEventsRef | Single orchestration point for poll, manual refresh, commandBridge — keeps callers clean |
+| Sliding window state shape | `windowEvents: { prev, current, next }` replaces `events: CalEvent[]` | Enables instant nav by pre-loading adjacent windows |
+| Sliding window — keep prev | Yes — maintain all 3 windows | Users toggle between today and tomorrow constantly. Back-nav must also be instant. |
+| Sliding window — poll scope | All 3 windows refreshed on poll | Stale adjacent windows not acceptable |
+| Sliding window — write op scope | fetchCalendarRef operates on current only | Adjacent windows go stale after a write — acceptable, refreshes on next nav or poll |
+| Sliding window — MiniMonth arbitrary jump | If jump > 1 window, fetch all 3 fresh | Shift logic only works for adjacent windows. Detect by comparing jump distance to window size. |
+| Sliding window — nav direction | SHIFT_FORWARD / SHIFT_BACK triggered by FC next()/prev() and commandBridge | Direction is known at call site — no need to infer from dates |
 
 ---
 
@@ -1289,29 +1334,26 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 - Phase 3: DONE
 - Phase 4: DONE
 - Phase 5: DONE
-- Phase 6: DONE (6.1, 6.2, 6.3, 6.4, 6.5 all complete)
+- Phase 6: DONE
 - Phase 7.1: DONE
 - Phase 7.2: DONE
 - Phase 7.3: DONE
 - Phase 7.4: DONE
-- Phase 7.5: CANCELLED — auth simplification deferred indefinitely (see section 5.20)
-- Phase 8: DONE — plugin submitted to Obsidian Community, automated review in progress
+- Phase 7.5: CANCELLED
+- Phase 8: DONE
 - Phase 9: DONE
-- Phase 10 (Performance): IN PROGRESS — see section 14
+- Phase 10 Step 1: DONE
+- **Phase 10 Step 2: UP NEXT**
 
-**Next up:** Phase 10 Step 1 — split fetchCalendars / fetchEvents in CalendarPanel.tsx
-
-### README notes
-- README lives at repo root
-- Screenshots live in `assets/` at repo root, referenced as `assets/image.png` in markdown
-- Keyboard shortcuts table left with "none" defaults — all remappable by user in Settings → Hotkeys
+### Next session start
+Paste this doc + current `CalendarContext.tsx` + current `CalendarPanel.tsx` at the top of a new thread. Ask Claude to implement Phase 10 Step 2 — sliding window prefetch. Read section 14 (Phase 10 design) in full before writing anything.
 
 ### Release notes
 - GitHub release tag: `1.0.0` on `master` branch
 - Release assets: `main.js`, `manifest.json`, `styles.css`
-- Obsidian submission: via `community.obsidian.md` developer dashboard (new system as of 2026 — no PR to obsidian-releases required)
-- Repo is public: `https://github.com/ShawnSomething/obsidian-gcal`
-- Default branch: `master` (not `main` — main was the empty template, all code is on master)
+- Obsidian submission: via `community.obsidian.md` developer dashboard
+- Repo: `https://github.com/ShawnSomething/obsidian-gcal`
+- Default branch: `master`
 
 ---
 
@@ -1340,55 +1382,11 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 - Fix 1: Added `recurrence?: string[]` to the `updates` parameter type in `splitRecurringSeries` in `GoogleCalendarAPI.ts`
 - Fix 2: Changed POST step from `recurrence: originalRecurrence` to `recurrence: updates.recurrence ?? originalRecurrence`
 - Fix 3: Added `recurrence?: string[]` to `EditProps.onSplitSeries` type in `EventModal.tsx`
-- CalendarPanel needed no changes — it passes `updates` straight through
 
 **Debugging approach used:**
 - Added `console.log` instrumentation to all steps of `splitRecurringSeries` to log request bodies and response bodies
-- Key insight from logs: PATCH returned 200 with correct UNTIL, DELETE returned 204, POST returned 200 — all steps succeeded. Issue was not network/auth. The POST body showed `recurrence: ["RRULE:FREQ=DAILY"]` instead of the user's new RRULE, which identified the exact problem.
-- Always log the full request body (not just status) when debugging API calls that return 200 but don't produce the expected result.
-
-### Key code changes from this session
-
-**GoogleCalendarAPI.ts — splitRecurringSeries updates type:**
-```typescript
-updates: {
-    title: string;
-    start: string;
-    end: string;
-    allDay: boolean;
-    location?: string;
-    description?: string;
-    recurrence?: string[];  // ← added
-}
-```
-
-**GoogleCalendarAPI.ts — POST step:**
-```typescript
-// before
-recurrence: originalRecurrence,
-
-// after
-recurrence: updates.recurrence ?? originalRecurrence,
-```
-
-**EventModal.tsx — EditProps.onSplitSeries type:**
-```typescript
-// before
-onSplitSeries: (updates: { title: string; start: string; end: string; allDay: boolean; location?: string; description?: string }) => Promise<void>;
-
-// after
-onSplitSeries: (updates: { title: string; start: string; end: string; allDay: boolean; location?: string; description?: string; recurrence?: string[] }) => Promise<void>;
-```
-
-### Decisions from this session
-
-| Decision | Choice | Reason |
-|---|---|---|
-| Repeat UI layout | Inline rows (Every/On/End) | More ergonomic, matches iOS Calendar UX |
-| Frequency labels | Day/Week/Month/Year (not Daily/Weekly) | Shorter, matches reference design |
-| "All events" ID routing | Pass `targetEventId` through updates shape | Cleanest way to route master ID from EventModal through CalendarPanel without adding a new prop |
-| splitRecurringSeries recurrence | `updates.recurrence ?? originalRecurrence` | User's new RRULE must be used; fall back to original only if recurrence wasn't changed |
-| Debug approach for silent 200s | Log full request body, not just status | When all steps return 200 but nothing changes, the bug is in what's being sent — log the body to find it |
+- Key insight: all steps returned 200 but POST body showed wrong RRULE — confirmed bug was in what was being sent, not the network
+- Always log the full request body (not just status) when debugging API calls that return 200 but don't produce the expected result
 
 ---
 
@@ -1398,42 +1396,41 @@ onSplitSeries: (updates: { title: string; start: string; end: string; allDay: bo
 Navigation between days/weeks takes ~2 seconds. Confirmed via network tab:
 - `calendarList` calls: ~35ms — not the problem
 - `events` calls: 500–919ms each — Google API latency, unavoidable
-- CORS preflights (~300ms) on every request — caused by `Authorization` header, cannot be eliminated, not the bottleneck
-- 6 calendars across 2 accounts tested. Other users may have more.
+- CORS preflights (~300ms) on every request — caused by `Authorization` header, cannot be eliminated
+- 6 calendars across 2 accounts tested
 
 ### Root Cause
-`fetchAllRef` fetches calendarList then events sequentially on every navigation. CalendarList almost never changes — fetching it on every date/view change is wasteful and creates a sequential dependency that delays event fetches.
+`fetchAllRef` fetches calendarList then events sequentially on every navigation. CalendarList almost never changes — fetching it on every date/view change is wasteful.
 
-### Plan (2 steps, do in order)
+### Step 1 — Split fetchCalendars and fetchEvents ✅ DONE
 
-**Step 1 — Split fetchCalendars and fetchEvents** ← NEXT
-Split `fetchAllRef` into two separate functions.
+Split `fetchAllRef` into three refs in `CalendarPanel.tsx`:
+- `fetchCalendarsRef` — fetches calendarList only, dispatches `SET_CALENDARS`, returns `CalendarMeta[]`
+- `fetchEventsRef` — fetches events for current window only. Optional `calendars?: CalendarMeta[]` arg.
+- `runFullRefreshRef` — composes both. Used by poll, manual refresh, commandBridge.
 
-`fetchCalendars` runs on:
-- Initial load
-- Every 5-min poll (must complete before fetchEvents — sequential, not parallel, because events fetch requires calendar list)
-- When an account is added/removed in settings
+`hasFetchedInitial` ref guards the navigation `useEffect` from firing on mount before initial load.
 
-`fetchEvents` runs on:
-- Navigation (date or view change) — uses `state.calendars` already in memory, no calendarList call
-- As second step of every poll (after fetchCalendars resolves)
+### Step 2 — Sliding Window Prefetch ← NEXT
 
-Key win: navigation skips calendarList entirely. Straight to event fetches against already-loaded `state.calendars`.
+**Goal:** Hide Google API latency behind user think time. Navigation renders instantly from pre-loaded data.
 
-Calendar visibility toggle stays client-side only — no refetch, filters from memory. Unchanged.
+**Context changes (`CalendarContext.tsx`):**
+- `events: CalEvent[]` → `windowEvents: { prev: CalEvent[], current: CalEvent[], next: CalEvent[] }`
+- New actions: `SET_CURRENT_WINDOW`, `SET_PREV_WINDOW`, `SET_NEXT_WINDOW`, `SHIFT_FORWARD`, `SHIFT_BACK`
+- `UPDATE_EVENT`, `ADD_EVENT`, `REMOVE_EVENT`, `MERGE_EVENTS` all operate on `windowEvents.current` only
 
-Files affected: `CalendarPanel.tsx` only. `GoogleCalendarAPI.ts` unchanged.
+**CalendarPanel changes:**
+- New helper: `getAdjacentDates(date, view)` → `{ prevDate: Date, nextDate: Date }`
+- New ref: `fetchWindowRef` — fetches events for arbitrary date/view, returns `CalEvent[]`, no dispatch
+- Initial load: fetch all 3 windows in parallel → dispatch each window
+- Navigation forward (next button / commandBridge.next): `SHIFT_FORWARD` (instant) → fetch new `next` in background
+- Navigation back (prev button / commandBridge.prev): `SHIFT_BACK` (instant) → fetch new `prev` in background
+- MiniMonth arbitrary jump (> 1 window): skip shift, fetch all 3 fresh
+- Poll/refresh: re-fetch all 3 windows
+- `fcEvents` useMemo: filters from `windowEvents.current` only
 
-**Step 2 — Sliding Window Prefetch** (do after Step 1 is validated)
-Preload adjacent windows while user is on current window. Hides Google API latency behind user think time.
-
-Design:
-- State holds 3 windows: `prev`, `current`, `next`
-- On navigation: old `next` → `current`, old `current` → `prev`, fetch new `next`, drop old `prev`
-- Poll refreshes all 3 windows (accuracy is priority — no stale windows)
-- `fcEvents` filters to render current window events only (FC must not receive 3x events)
-- Day view: prev/next = adjacent days; Week view: prev/next = adjacent weeks; 3day: adjacent 3-day blocks
-- Step 1 is a prerequisite — `fetchEvents` must be independent before it can be called per window
+**Files affected:** `CalendarContext.tsx` and `CalendarPanel.tsx`
 
 ### Decisions
 
@@ -1442,6 +1439,7 @@ Design:
 | CORS preflights | Accept as-is | Caused by Authorization header — unavoidable |
 | calendarList on navigation | Remove | Calendars don't change on nav — wasteful |
 | calendarList + events parallel | Not possible | Events fetch requires calendar list |
-| calendarList on toggle | No refetch | Toggle is client-side filter |
-| Poll scope for sliding windows | All 3 windows | Accuracy is priority — stale adjacent windows not acceptable |
-| Build order | Split first, then sliding windows | Split is prerequisite; validate independently |
+| Poll scope | All 3 windows | Accuracy is priority — stale adjacent windows not acceptable |
+| Keep prev window | Yes | Users toggle today/tomorrow constantly — back-nav must be instant too |
+| Write op scope | current only | Adjacent windows stale after write is acceptable — refreshes on next nav or poll |
+| MiniMonth arbitrary jump | Fetch all 3 fresh | Shift logic only valid for adjacent windows |
