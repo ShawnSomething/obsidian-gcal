@@ -223,7 +223,7 @@ export default function EventModal(props: Props) {
   return (
     <div className="gcal-modal-backdrop" onClick={props.onClose}>
       <div className="gcal-modal" onClick={e => e.stopPropagation()}>
-
+        <div className="gcal-modal-body">
         {/* Title row */}
         <div className="gcal-modal-title-row">
           <input
@@ -621,6 +621,8 @@ export default function EventModal(props: Props) {
             </div>
           </>
         )}
+
+        </div>
 
         {/* Footer */}
         <div className="gcal-modal-footer">
