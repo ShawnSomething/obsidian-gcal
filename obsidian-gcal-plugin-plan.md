@@ -1,7 +1,7 @@
 # Obsidian Google Calendar Plugin — PRD + Tech Design
 
 ## Status
-`Phase 10 Complete` — May 2026
+`In Progress — Phase 10 Step 2 + Duplicate Event Feature` — Started May 2026
 
 ---
 
@@ -47,6 +47,7 @@ Only change what the task requires. Do not touch surrounding code, outer divs, o
 | 8 | Mini month view | Navigation only — click date jumps main view |
 | 9 | Open in browser button | `htmlLink` field from Google API |
 | 10 | Obsidian sidebar panel | `ItemView`, user-draggable width |
+| 11 | Duplicate event | Keyboard shortcut while modal open — silent create, same details, no recurrence |
 
 ### Out of Scope (v1)
 - Mobile
@@ -1197,9 +1198,8 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 | Sliding window — write ops stale adjacent windows | `fetchCalendarRef` only updates `windowEvents.current`. Adjacent windows go stale after a write. Acceptable — they refresh on next nav or poll. |
 | Sliding window — nav direction detection | `SHIFT_FORWARD` vs `SHIFT_BACK` must be chosen correctly on nav. Use FC's `next()`/`prev()` buttons and `commandBridge.next()`/`prev()` as the trigger — they know direction. MiniMonth date jumps must determine direction by comparing new date to current date. |
 | Sliding window — MiniMonth arbitrary jump | If user jumps more than one window via MiniMonth, `prev`/`next` are no longer adjacent. On arbitrary jump: skip shift, fetch all 3 windows fresh. Detect by comparing jump distance to current window size. |
-| Sliding window — rapid nav race condition | Multiple `fetchAllWindowsRef` calls in flight complete out of order → stale result overwrites correct data → calendar blinks blank. Fix: generation counter `fetchIdRef = useRef(0)`. Increment before each fetch, gate every dispatch with `if (fetchIdRef.current === id)`. |
-| Sliding window — empty adjacent window on nav | If pre-load hasn't finished when user navigates, `windowEvents.next/prev` is `[]`. Guard: check `length > 0` before SHIFTing. If empty, fall back to `fetchAllWindowsRef` (full 3-window fetch). Avoids blank calendar flash. |
-| fetchIdRef must be a ref not state | `useState` for generation counter would batch updates async and break ordering guarantee. `useRef` mutation is synchronous — the new ID is visible immediately to the next dispatch check. |
+| Duplicate event — stale editingEvent in ref | `duplicateRef.current` is re-assigned every render so it always closes over the latest `editingEvent`. But the `postEvent` call is async — capture `editingEvent` into a `snapshot` local var before calling `setEditingEvent(null)`, otherwise the ref may read null by the time the async resolves. |
+| Duplicate event — attendees responseStatus | Only send `{ email: string }[]` for attendees on duplicate POST — do not forward `responseStatus`. Sending responseStatus for other attendees on a brand new event is meaningless and may confuse Google. |
 
 ---
 
@@ -1324,10 +1324,6 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 | Sliding window — write op scope | fetchCalendarRef operates on current only | Adjacent windows go stale after a write — acceptable, refreshes on next nav or poll |
 | Sliding window — MiniMonth arbitrary jump | If jump > 1 window, fetch all 3 fresh | Shift logic only works for adjacent windows. Detect by comparing jump distance to window size. |
 | Sliding window — nav direction | SHIFT_FORWARD / SHIFT_BACK triggered by FC next()/prev() and commandBridge | Direction is known at call site — no need to infer from dates |
-| Sliding window — empty adjacent window guard | Check `length > 0` before SHIFTing; fall back to fetchAllWindowsRef if empty | Avoids blank calendar when pre-load hasn't finished |
-| Sliding window — race condition fix | Generation counter `fetchIdRef = useRef(0)` | Multiple in-flight fetches complete out of order without a guard. Ref chosen over state — mutation is synchronous, no async batching risk. |
-| navigateNextRef / navigatePrevRef | Refs re-assigned every render | Avoids stale closure in commandBridge (registered with [] deps) while always using latest activeView |
-| fetchEventsRef | Removed in Step 2 | Replaced by fetchWindowRef (generic, takes date+view) + fetchAllWindowsRef (orchestrates all 3). fetchEventsRef was a thin wrapper that added no value once the sliding window pattern was in place. |
 
 ---
 
@@ -1351,15 +1347,10 @@ ln -s /path/to/obsidian-gcal/styles.css /path/to/gcal-test/.obsidian/plugins/gca
 - Phase 9: DONE
 - Phase 10 Step 1: DONE
 - Phase 10 Step 2: DONE
-- **Phase 10: COMPLETE**
+- **Phase 11 — Duplicate Event: DONE**
 
 ### Next session start
-No active phase. Plugin is feature-complete and published. Options for next work:
-- Tag a new release (e.g. `1.1.0`) with the Phase 10 performance improvements
-- Apply for Google OAuth verification (post-publish, eliminates unverified app warning — no code change needed)
-- Monitor Obsidian Community Plugin store review status
-
-If starting a new thread, paste this doc at the top. No files needed unless a bug is being fixed.
+Paste this doc + current `CalendarContext.tsx` + current `CalendarPanel.tsx` at the top of a new thread.
 
 ### Release notes
 - GitHub release tag: `1.0.0` on `master` branch
@@ -1403,6 +1394,54 @@ If starting a new thread, paste this doc at the top. No files needed unless a bu
 
 ---
 
+### Phase 11 — Duplicate Event ✅ DONE
+
+**Behaviour:**
+- Shortcut only fires when the event modal is open (`editingEvent !== null` — no DOM focus detection needed)
+- Closes the modal immediately so the user sees the new event appear on the calendar
+- Silent create — no modal for the duplicate; user clicks in to edit if needed
+- Duplicate is always a single event (no recurrence), regardless of whether source was recurring or not
+- All other fields copied: title, start, end, allDay, location, description, attendees
+- Attendees copied as `{ email: string }[]` — only email sent, no responseStatus
+
+**Files changed:**
+
+`GoogleCalendarAPI.ts`:
+- Added `attendees?: { email: string }[]` to `postEvent` event param type
+- Added `...(event.attendees?.length ? { attendees: event.attendees } : {})` to POST body
+
+`main.ts`:
+- Added `duplicate: () => void` to `CommandBridge` interface
+- Added `gcal-duplicate-event` command wired to `commandBridge?.duplicate()`
+
+`CalendarPanel.tsx`:
+- Added `duplicateRef = useRef<(() => void) | undefined>(undefined)`
+- Assigned `duplicateRef.current` each render — captures `editingEvent` into a `snapshot` local var before `setEditingEvent(null)`, then calls `postEvent` with snapshot data
+- Wired `duplicate: () => duplicateRef.current?.()` into `commandBridge` useEffect
+
+**Key pattern — snapshot before state clear:**
+```typescript
+duplicateRef.current = () => {
+  if (!editingEvent) return;
+  const snapshot = editingEvent;      // capture before state clears
+  setEditingEvent(null);              // close modal immediately
+  showToast("Duplicating...", "loading");
+  plugin.api.postEvent(account, snapshot.calendarId, { ... })
+    .then((created) => {
+      dispatch({ type: "ADD_EVENT", payload: created });
+      showToast("Event duplicated", "success", 2000);
+    })
+    .catch((err) => {
+      showToast(`Failed to duplicate event: ${(err as Error).message}`, "error");
+    });
+};
+```
+`.then/.catch` used instead of `async` — keeps ref assignment pattern consistent with other nav refs.
+
+**Toasts:** "Duplicating..." (loading) → "Event duplicated" (success, 2000ms) or error toast on failure.
+
+---
+
 ## 14. Phase 10 — Performance (In Progress)
 
 ### Problem
@@ -1424,32 +1463,24 @@ Split `fetchAllRef` into three refs in `CalendarPanel.tsx`:
 
 `hasFetchedInitial` ref guards the navigation `useEffect` from firing on mount before initial load.
 
-### Step 2 — Sliding Window Prefetch ✅ DONE
+### Step 2 — Sliding Window Prefetch ← NEXT
 
 **Goal:** Hide Google API latency behind user think time. Navigation renders instantly from pre-loaded data.
 
 **Context changes (`CalendarContext.tsx`):**
 - `events: CalEvent[]` → `windowEvents: { prev: CalEvent[], current: CalEvent[], next: CalEvent[] }`
 - New actions: `SET_CURRENT_WINDOW`, `SET_PREV_WINDOW`, `SET_NEXT_WINDOW`, `SHIFT_FORWARD`, `SHIFT_BACK`
-- `SET_EVENTS` removed
 - `UPDATE_EVENT`, `ADD_EVENT`, `REMOVE_EVENT`, `MERGE_EVENTS` all operate on `windowEvents.current` only
 
 **CalendarPanel changes:**
-- New helper: `getAdjacentDates(date, view)` → `{ prevDate: Date, nextDate: Date }` — returns window-aligned adjacent dates (Monday-snapped for week view). Uses `getViewWindow` internally.
-- New refs: `fetchWindowRef` (generic fetcher, returns `CalEvent[]`, no dispatch), `fetchAllWindowsRef` (fetches all 3 windows, dispatches each), `navigateNextRef`, `navigatePrevRef`
-- `fetchEventsRef` removed — replaced by `fetchWindowRef` + direct dispatch calls
-- Initial load: fetch calendar list then all 3 windows in parallel → dispatch each
-- Navigation forward/back: check if adjacent window is pre-loaded (`length > 0`). If yes: SHIFT instantly + background fetch new adjacent. If no: fetch all 3 fresh.
-- MiniMonth: compares target window start against prev/next dates from `getAdjacentDates`. One-step adjacent = SHIFT + background fetch. Arbitrary jump or same window = fetch all 3 / no-op.
-- View change: `useEffect([activeView])` triggers fresh 3-window fetch. Date navigation no longer in deps.
-- Poll/refresh: re-fetch all 3 windows via `runFullRefreshRef`
+- New helper: `getAdjacentDates(date, view)` → `{ prevDate: Date, nextDate: Date }`
+- New ref: `fetchWindowRef` — fetches events for arbitrary date/view, returns `CalEvent[]`, no dispatch
+- Initial load: fetch all 3 windows in parallel → dispatch each window
+- Navigation forward (next button / commandBridge.next): `SHIFT_FORWARD` (instant) → fetch new `next` in background
+- Navigation back (prev button / commandBridge.prev): `SHIFT_BACK` (instant) → fetch new `prev` in background
+- MiniMonth arbitrary jump (> 1 window): skip shift, fetch all 3 fresh
+- Poll/refresh: re-fetch all 3 windows
 - `fcEvents` useMemo: filters from `windowEvents.current` only
-
-**Bug fixed post-implementation — rapid navigation race condition:**
-- Symptom: navigating quickly caused calendar to briefly flash blank
-- Root cause: multiple `fetchAllWindowsRef` calls in flight simultaneously, completing out of order. A stale fetch dispatched `SET_CURRENT_WINDOW` over the correct result.
-- Fix: generation counter `fetchIdRef = useRef(0)`. Each fetch increments and claims an ID before starting. Dispatches are gated with `if (fetchIdRef.current === id) dispatch(...)`. Stale results are discarded silently. Single-window background prefetches use the same guard on their `SET_NEXT_WINDOW` / `SET_PREV_WINDOW` dispatches.
-- `fetchAllWindowsRef` already increments `fetchIdRef` internally — so when the `else` fallback fires, it automatically cancels any in-flight single-window prefetch from a prior nav.
 
 **Files affected:** `CalendarContext.tsx` and `CalendarPanel.tsx`
 
@@ -1464,6 +1495,10 @@ Split `fetchAllRef` into three refs in `CalendarPanel.tsx`:
 | Keep prev window | Yes | Users toggle today/tomorrow constantly — back-nav must be instant too |
 | Write op scope | current only | Adjacent windows stale after write is acceptable — refreshes on next nav or poll |
 | MiniMonth arbitrary jump | Fetch all 3 fresh | Shift logic only valid for adjacent windows |
-| Empty adjacent window on nav | Fall back to fetch all 3 fresh | Avoids flashing blank calendar when pre-load hasn't finished |
-| Race condition fix | Generation counter (fetchIdRef) | Ref (not state) — mutation is synchronous and doesn't trigger re-render. useState would introduce async batching that breaks the ordering guarantee. |
-| Single-window prefetch race | Same fetchIdRef guard on SET_NEXT/PREV_WINDOW | fetchAllWindowsRef increments fetchIdRef, so fallback path automatically cancels stale single-window fetches |
+| Duplicate — open modal or silent create | Silent create | Faster; user can click into the duplicate if they need to edit |
+| Duplicate — recurrence | Always strip recurrence | A duplicate is a one-off copy — carrying over recurrence would create an unintended new series |
+| Duplicate — attendees | Copy as email-only array | Attendees are part of "same details"; responseStatus stripped — irrelevant on a new event |
+| Duplicate — "modal in focus" gate | `editingEvent !== null` check | Simpler and more reliable than DOM focus detection in Electron |
+| Duplicate — modal close timing | Close modal before postEvent resolves | User sees the new event land on the calendar; toast confirms success |
+| Duplicate — ref pattern | `duplicateRef` re-assigned each render, `.then/.catch` not async | Consistent with other nav refs; snapshot pattern handles async state clear safely |
+| postEvent attendees param | Added as optional `{ email: string }[]` | Needed for duplicate feature; other callers unaffected (field is optional) |
