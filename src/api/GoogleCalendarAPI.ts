@@ -125,6 +125,7 @@ export class GoogleCalendarAPI {
 			recurrence?: string[];
 			location?: string;
 			description?: string;
+			attendees?: { email: string }[];
 		},
 	): Promise<CalEvent> {
 		const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?sendUpdates=all`;
@@ -150,6 +151,7 @@ export class GoogleCalendarAPI {
 			...(event.recurrence ? { recurrence: event.recurrence } : {}),
 			...(event.location ? { location: event.location } : {}),
 			...(event.description ? { description: event.description } : {}),
+			...(event.attendees?.length ? { attendees: event.attendees } : {}),
 		});
 
 		if (!response.ok) {

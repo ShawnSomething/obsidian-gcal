@@ -132,6 +132,7 @@ export default function CalendarPanel({ plugin }: Props) {
   // Navigation refs — always use latest activeView closure via re-assignment each render.
   const navigateNextRef = useRef<(() => void) | undefined>(undefined);
   const navigatePrevRef = useRef<(() => void) | undefined>(undefined);
+  const duplicateRef = useRef<(() => void) | undefined>(undefined);
   const fetchIdRef = useRef(0);
 
   const calendarRef = useRef<FullCalendar>(null);
@@ -252,6 +253,31 @@ export default function CalendarPanel({ plugin }: Props) {
     }
   };
 
+  duplicateRef.current = () => {
+    if (!editingEvent) return;
+    const account = plugin.data.accounts.find((a) => a.accountId === editingEvent.accountId);
+    if (!account) return;
+    const snapshot = editingEvent;
+    setEditingEvent(null);
+    showToast("Duplicating...", "loading");
+    plugin.api.postEvent(account, snapshot.calendarId, {
+      title: snapshot.title,
+      start: snapshot.start,
+      end: snapshot.end,
+      allDay: snapshot.allDay,
+      location: snapshot.location,
+      description: snapshot.description,
+      attendees: snapshot.attendees.length
+        ? snapshot.attendees.map((a) => ({ email: a.email }))
+        : undefined,
+    }).then((created) => {
+      dispatch({ type: "ADD_EVENT", payload: created });
+      showToast("Event duplicated", "success", 2000);
+    }).catch((err) => {
+      showToast(`Failed to duplicate event: ${(err as Error).message}`, "error");
+    });
+  };
+
   // ─── Effects ─────────────────────────────────────────────────────────────────
 
   // Initial load — fetch calendar list + all 3 windows in parallel.
@@ -330,6 +356,7 @@ export default function CalendarPanel({ plugin }: Props) {
       refresh: () => { runFullRefreshRef.current?.(); },
       next: () => navigateNextRef.current?.(),
       prev: () => navigatePrevRef.current?.(),
+      duplicate: () => duplicateRef.current?.(),
     };
     return () => {
       plugin.commandBridge = null;

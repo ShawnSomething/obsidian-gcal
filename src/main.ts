@@ -11,6 +11,7 @@ export interface CommandBridge {
 	refresh: () => void;
 	next: () => void;
 	prev: () => void;
+	duplicate: () => void;
 }
 
 export default class GCalPlugin extends Plugin {
@@ -121,6 +122,12 @@ export default class GCalPlugin extends Plugin {
 			id: "gcal-prev",
 			name: "Google Calendar: Previous",
 			callback: () => this.commandBridge?.prev(),
+		});
+		
+		this.addCommand({
+			id: "gcal-duplicate-event",
+			name: "Google Calendar: Duplicate event",
+			callback: () => this.commandBridge?.duplicate(),
 		});
 	}
 
