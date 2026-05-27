@@ -13,6 +13,7 @@ import enAU from "@fullcalendar/core/locales/en-au";
 import { ViewDensity } from "../api/types";
 import { desaturateHex } from "../utils/color";
 import MiniMonth from "./MiniMonth";
+import ContextMenu from "./ContextMenu";
 
 interface Props {
   plugin: GCalPlugin;
@@ -91,6 +92,7 @@ export default function CalendarPanel({ plugin }: Props) {
   );
 
   const [viewPopoverOpen, setViewPopoverOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ calEvent: CalEvent; x: number; y: number } | null>(null);
   const viewPopoverRef = useRef<HTMLDivElement>(null);
 
   const showToast = (message: string, type: "loading" | "success" | "error", autoDismissMs?: number) => {
@@ -108,6 +110,92 @@ export default function CalendarPanel({ plugin }: Props) {
     return new Promise((resolve) => {
       setRecurringModalState({ event, resolve, ...opts });
     });
+  };
+
+  const handleDuplicate = (calEvent: CalEvent) => {
+    const account = plugin.data.accounts.find((a) => a.accountId === calEvent.accountId);
+    if (!account) return;
+    showToast("Duplicating...", "loading");
+    plugin.api
+      .postEvent(account, calEvent.calendarId, {
+        title: calEvent.title,
+        start: calEvent.start,
+        end: calEvent.end,
+        allDay: calEvent.allDay,
+        location: calEvent.location,
+        description: calEvent.description,
+        attendees: calEvent.attendees.length
+          ? calEvent.attendees.map((a) => ({ email: a.email }))
+          : undefined,
+      })
+      .then((created) => {
+        dispatch({ type: "ADD_EVENT", payload: created });
+        showToast("Event duplicated", "success", 2000);
+      })
+      .catch((err) => {
+        showToast(`Failed to duplicate event: ${(err as Error).message}`, "error");
+      });
+  };
+
+  const handleDelete = async (calEvent: CalEvent) => {
+    if (!window.confirm(`Delete "${calEvent.title}"?`)) return;
+    const account = plugin.data.accounts.find((a) => a.accountId === calEvent.accountId);
+    if (!account) return;
+    showToast("Deleting...", "loading");
+    try {
+      if (calEvent.recurringEventId) {
+        const choice = await askRecurring(calEvent);
+        if (!choice) { setToast(null); return; }
+        if (choice === "this") {
+          const res = await plugin.api.deleteWithAuth(
+            account,
+            `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calEvent.calendarId)}/events/${calEvent.id}`
+          );
+          if (!res.ok) throw new Error("Failed to delete event");
+          dispatch({ type: "REMOVE_EVENT", payload: calEvent.id });
+        } else {
+          await plugin.api.deleteRecurringAndFollowing(account, calEvent.calendarId, calEvent);
+          await fetchCalendarRef.current?.(calEvent.calendarId, calEvent.accountId);
+        }
+      } else {
+        const res = await plugin.api.deleteWithAuth(
+          account,
+          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calEvent.calendarId)}/events/${calEvent.id}`
+        );
+        if (!res.ok) throw new Error("Failed to delete event");
+        dispatch({ type: "REMOVE_EVENT", payload: calEvent.id });
+      }
+      setEditingEvent(null);
+      showToast("Event deleted", "success", 2000);
+    } catch (err) {
+      showToast(`Failed to delete event: ${(err as Error).message}`, "error");
+    }
+  };
+
+  const handleRespond = async (calEvent: CalEvent, status: "accepted" | "declined" | "tentative") => {
+    const account = plugin.data.accounts.find((a) => a.accountId === calEvent.accountId);
+    if (!account) return;
+    try {
+      let eventId = calEvent.id;
+      if (calEvent.recurringEventId) {
+        const choice = await askRecurring(calEvent, {
+          title: "RSVP to recurring event",
+          hideFollowing: true,
+          showAll: true,
+        });
+        if (!choice) return;
+        if (choice === "all") eventId = calEvent.recurringEventId;
+      }
+      showToast("Updating response...", "loading");
+      const updated = await plugin.api.patchAttendeeResponse(
+        account, calEvent.calendarId, eventId, calEvent.attendees, status
+      );
+      dispatch({ type: "UPDATE_EVENT", payload: { id: updated.id, changes: updated } });
+      setEditingEvent(null);
+      showToast("Response updated", "success", 2000);
+    } catch (err) {
+      showToast(`Failed to update response: ${(err as Error).message}`, "error");
+    }
   };
 
   const hasFetchedInitial = useRef(false);
@@ -137,6 +225,8 @@ export default function CalendarPanel({ plugin }: Props) {
 
   const calendarRef = useRef<FullCalendar>(null);
   const calendarWrapperRef = useRef<HTMLDivElement>(null);
+
+  const eventElementMap = useRef<Map<HTMLElement, CalEvent>>(new Map());
 
   // ─── Ref assignments (re-run every render, always latest closure) ───────────
 
@@ -255,27 +345,9 @@ export default function CalendarPanel({ plugin }: Props) {
 
   duplicateRef.current = () => {
     if (!editingEvent) return;
-    const account = plugin.data.accounts.find((a) => a.accountId === editingEvent.accountId);
-    if (!account) return;
     const snapshot = editingEvent;
     setEditingEvent(null);
-    showToast("Duplicating...", "loading");
-    plugin.api.postEvent(account, snapshot.calendarId, {
-      title: snapshot.title,
-      start: snapshot.start,
-      end: snapshot.end,
-      allDay: snapshot.allDay,
-      location: snapshot.location,
-      description: snapshot.description,
-      attendees: snapshot.attendees.length
-        ? snapshot.attendees.map((a) => ({ email: a.email }))
-        : undefined,
-    }).then((created) => {
-      dispatch({ type: "ADD_EVENT", payload: created });
-      showToast("Event duplicated", "success", 2000);
-    }).catch((err) => {
-      showToast(`Failed to duplicate event: ${(err as Error).message}`, "error");
-    });
+    handleDuplicate(snapshot);
   };
 
   // ─── Effects ─────────────────────────────────────────────────────────────────
@@ -331,6 +403,25 @@ export default function CalendarPanel({ plugin }: Props) {
     });
     observer.observe(el);
     return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const el = calendarWrapperRef.current;
+    if (!el) return;
+    const handler = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      let target = e.target as HTMLElement | null;
+      while (target && target !== el) {
+        if (eventElementMap.current.has(target)) {
+          setContextMenu({ calEvent: eventElementMap.current.get(target)!, x: e.clientX, y: e.clientY });
+          return;
+        }
+        target = target.parentElement;
+      }
+    };
+    el.addEventListener("contextmenu", handler);
+    return () => el.removeEventListener("contextmenu", handler);
   }, []);
 
   // Persist density.
@@ -746,8 +837,17 @@ export default function CalendarPanel({ plugin }: Props) {
               allDay: info.allDay,
             });
           }}
+
+          eventDidMount={(info) => {
+            const calEvent = info.event.extendedProps.calEvent as CalEvent;
+            eventElementMap.current.set(info.el, calEvent);
+          }}
+          eventWillUnmount={(info) => {
+            eventElementMap.current.delete(info.el);
+          }}
         />
       </div>
+
 
       {editingEvent && (
         <EventModal
@@ -905,6 +1005,23 @@ export default function CalendarPanel({ plugin }: Props) {
             recurringModalState.resolve(choice);
             setRecurringModalState(null);
           }}
+        />
+      )}
+
+      {contextMenu && (
+        <ContextMenu
+          calEvent={contextMenu.calEvent}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          onJoinMeeting={
+            contextMenu.calEvent.hangoutLink
+              ? () => window.open(contextMenu.calEvent.hangoutLink!, "_blank")
+              : undefined
+          }
+          onDuplicate={() => handleDuplicate(contextMenu.calEvent)}
+          onRespond={(status) => handleRespond(contextMenu.calEvent, status)}
+          onDelete={() => handleDelete(contextMenu.calEvent)}
         />
       )}
     </div>

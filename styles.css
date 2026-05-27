@@ -886,3 +886,74 @@
   z-index: 100;
   min-width: 48px;
 }
+
+/* ─── Context menu ───────────────────────────────────────────── */
+
+.gcal-context-menu {
+  position: fixed;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  padding: 4px 0;
+  min-width: 190px;
+  z-index: 9999;
+}
+
+.gcal-context-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 12px;
+  background: none;
+  border: none;
+  color: var(--text-normal);
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+}
+
+.gcal-context-item:hover {
+  background: var(--background-secondary);
+}
+
+.gcal-context-item--danger {
+  color: var(--text-error);
+}
+
+.gcal-context-icon {
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.gcal-context-rsvp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+}
+
+.gcal-context-rsvp-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.gcal-context-rsvp-btns {
+  display: flex;
+  gap: 4px;
+}
+
+.gcal-context-rsvp-btns .gcal-btn-response {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+.gcal-context-divider {
+  height: 1px;
+  background: var(--background-modifier-border);
+  margin: 4px 0;
+}
