@@ -199,6 +199,7 @@ export default function CalendarPanel({ plugin }: Props) {
   };
 
   const hasFetchedInitial = useRef(false);
+  const selectedDateRef = useRef(state.selectedDate);
 
   // Fetches calendar list, dispatches SET_CALENDARS, returns merged CalendarMeta[].
   const fetchCalendarsRef = useRef<(() => Promise<CalendarMeta[]>) | undefined>(undefined);
@@ -429,6 +430,7 @@ export default function CalendarPanel({ plugin }: Props) {
     plugin.data.viewDensity = density;
     plugin.saveData(plugin.data);
   }, [density]);
+  
 
   // Wire commandBridge — empty deps so it registers once.
   // nav refs are re-assigned every render so they always use the latest closure.
@@ -460,6 +462,10 @@ export default function CalendarPanel({ plugin }: Props) {
     plugin.saveData(plugin.data);
   }, [activeView]);
 
+  useEffect(() => {
+  selectedDateRef.current = state.selectedDate;
+}, [state.selectedDate]);
+
   // Close view popover on outside click.
   useEffect(() => {
     if (!viewPopoverOpen) return;
@@ -471,6 +477,33 @@ export default function CalendarPanel({ plugin }: Props) {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [viewPopoverOpen]);
+
+  useEffect(() => {
+  let timerId: ReturnType<typeof setTimeout>;
+  const schedule = () => {
+    const now = new Date();
+    const midnight = new Date(now);
+    midnight.setHours(24, 0, 0, 0);
+    timerId = setTimeout(() => {
+      const newToday = new Date();
+      const prev = selectedDateRef.current;
+      const yesterday = new Date(newToday);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const wasViewingYesterday =
+        prev.getFullYear() === yesterday.getFullYear() &&
+        prev.getMonth() === yesterday.getMonth() &&
+        prev.getDate() === yesterday.getDate();
+      if (wasViewingYesterday) {
+        dispatch({ type: "SET_DATE", payload: newToday });
+        calendarRef.current?.getApi().today();
+        fetchAllWindowsRef.current?.(newToday);
+      }
+      schedule();
+    }, midnight.getTime() - now.getTime());
+  };
+  schedule();
+  return () => clearTimeout(timerId);
+}, []);
 
   // ─── MiniMonth date selection ─────────────────────────────────────────────
 
