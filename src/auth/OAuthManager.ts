@@ -119,7 +119,7 @@ export class OAuthManager {
 		if (response.status < 200 || response.status >= 300) {
 			throw new Error(`Token exchange failed: ${response.status}`);
 		}
-		const tokens = response.json;
+		const tokens = response.json as { access_token: string; refresh_token: string; expires_in: number };
 		console.log("Token exchange response:", tokens);
 		return tokens;
 	}
@@ -134,7 +134,7 @@ export class OAuthManager {
 			throw new Error("Failed to fetch account info");
 		}
 
-		return response.json;
+		return response.json as { email: string };
 	}
 
 	private async findAvailablePort(): Promise<number> {

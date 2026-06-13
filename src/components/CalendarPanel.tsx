@@ -316,7 +316,7 @@ export default function CalendarPanel({ plugin }: Props) {
       const id = ++fetchIdRef.current;
       dispatch({ type: "SHIFT_FORWARD" });
       const { nextDate } = getAdjacentDates(newDate, activeView);
-      fetchWindowRef.current?.(nextDate, activeView).then((events) => {
+      void fetchWindowRef.current?.(nextDate, activeView).then((events) => {
         if (fetchIdRef.current === id) dispatch({ type: "SET_NEXT_WINDOW", payload: events });
       });
     } else {
@@ -356,7 +356,7 @@ export default function CalendarPanel({ plugin }: Props) {
 
   // Initial load — fetch calendar list + all 3 windows in parallel.
   useEffect(() => {
-    (async () => {
+    void (async () => {
       showToast("Loading calendars...", "loading");
       dispatch({ type: "SET_LOADING", payload: true });
       dispatch({ type: "SET_ERROR", payload: null });
@@ -391,7 +391,7 @@ export default function CalendarPanel({ plugin }: Props) {
     const visibility: Record<string, boolean> = {};
     state.calendars.forEach((cal) => { visibility[cal.id] = cal.visible; });
     plugin.data.calendarVisibility = visibility;
-    plugin.saveData(plugin.data);
+    void plugin.saveData(plugin.data);
   }, [state.calendars]);
 
   // ResizeObserver — tell FullCalendar to remeasure when the panel resizes.
@@ -429,7 +429,7 @@ export default function CalendarPanel({ plugin }: Props) {
   // Persist density.
   useEffect(() => {
     plugin.data.viewDensity = density;
-    plugin.saveData(plugin.data);
+    void plugin.saveData(plugin.data);
   }, [density]);
 
 
@@ -460,7 +460,7 @@ export default function CalendarPanel({ plugin }: Props) {
   // Persist active view.
   useEffect(() => {
     plugin.data.activeView = activeView;
-    plugin.saveData(plugin.data);
+    void plugin.saveData(plugin.data);
   }, [activeView]);
 
   useEffect(() => {
@@ -621,7 +621,7 @@ export default function CalendarPanel({ plugin }: Props) {
 
         <div className="gcal-panel-header-left">
           <button
-            onClick={() => runFullRefreshRef.current?.()}
+            onClick={() => { void runFullRefreshRef.current?.() }}
             disabled={state.isLoading}
             className="gcal-panel-btn-icon"
             title="Refresh calendars"
@@ -694,179 +694,182 @@ export default function CalendarPanel({ plugin }: Props) {
               ? ["gcal-event-needs-action"]
               : [];
           }}
-          eventDrop={(info) => { void (async () => {
-            const calEvent = info.event.extendedProps.calEvent as CalEvent;
-            const account = plugin.data.accounts.find(
-              (a) => a.accountId === calEvent.accountId
-            );
+          eventDrop={(info) => {
+            void (async () => {
+              const calEvent = info.event.extendedProps.calEvent as CalEvent;
+              const account = plugin.data.accounts.find(
+                (a) => a.accountId === calEvent.accountId
+              );
 
-            if (!account) {
-              info.revert();
-              return;
-            }
-
-            if (calEvent.recurringEventId) {
-              const choice = await askRecurring(calEvent);
-              if (!choice) {
+              if (!account) {
                 info.revert();
                 return;
               }
 
-              if (choice === "this") {
-                showToast("Moving event...", "loading");
-                try {
-                  const updated = await plugin.api.patchEventTimes(
-                    account,
-                    calEvent.calendarId,
-                    calEvent.id,
-                    info.event.startStr,
-                    info.event.endStr
-                  );
-                  dispatch({ type: "UPDATE_EVENT", payload: { id: updated.id, changes: updated } });
-                  showToast("Event moved", "success", 2000);
-                } catch (err) {
+              if (calEvent.recurringEventId) {
+                const choice = await askRecurring(calEvent);
+                if (!choice) {
                   info.revert();
-                  showToast(`Failed to move event: ${(err as Error).message}`, "error");
-                }
-              } else if (choice === "following") {
-                showToast("Splitting series...", "loading");
-                try {
-                  await plugin.api.splitRecurringSeries(
-                    account,
-                    calEvent.calendarId,
-                    calEvent,
-                    {
-                      start: info.event.startStr,
-                      end: info.event.endStr,
-                      title: calEvent.title,
-                      allDay: calEvent.allDay,
-                    }
-                  );
-                  await fetchCalendarRef.current?.(calEvent.calendarId, calEvent.accountId);
-                  showToast("Series split", "success", 2000);
-                } catch (err) {
-                  info.revert();
-                  showToast(`Failed to split series: ${(err as Error).message}`, "error");
-                }
-              }
-
-              return;
-            }
-
-            showToast("Moving event...", "loading");
-            try {
-              const updated = await plugin.api.patchEventTimes(
-                account,
-                calEvent.calendarId,
-                calEvent.id,
-                info.event.startStr,
-                info.event.endStr
-              );
-              dispatch({ type: "UPDATE_EVENT", payload: { id: updated.id, changes: updated } });
-              showToast("Event moved", "success", 2000);
-            } catch (err) {
-              info.revert();
-              showToast(`Failed to move event: ${(err as Error).message}`, "error");
-            }
-          })();
-          }}
-
-          eventResize={(info) => { void (async () => {
-            const calEvent = info.event.extendedProps.calEvent as CalEvent;
-            const account = plugin.data.accounts.find(
-              (a) => a.accountId === calEvent.accountId
-            );
-
-            if (!account) {
-              info.revert();
-              return;
-            }
-
-            if (calEvent.recurringEventId) {
-              const choice = await askRecurring(calEvent);
-              if (!choice) {
-                info.revert();
-                return;
-              }
-
-              if (choice === "this") {
-                showToast("Resizing event...", "loading");
-                try {
-                  const updated = await plugin.api.patchEventTimes(
-                    account,
-                    calEvent.calendarId,
-                    calEvent.id,
-                    info.event.startStr,
-                    info.event.endStr
-                  );
-                  dispatch({ type: "UPDATE_EVENT", payload: { id: updated.id, changes: updated } });
-                  showToast("Event resized", "success", 2000);
-                } catch (err) {
-                  info.revert();
-                  showToast(`Failed to resize event: ${(err as Error).message}`, "error");
-                }
-              } else if (choice === "following") {
-                showToast("Splitting series...", "loading");
-                try {
-                  await plugin.api.splitRecurringSeries(
-                    account,
-                    calEvent.calendarId,
-                    calEvent,
-                    {
-                      start: info.event.startStr,
-                      end: info.event.endStr,
-                      title: calEvent.title,
-                      allDay: calEvent.allDay,
-                    }
-                  );
-                  await fetchCalendarRef.current?.(calEvent.calendarId, calEvent.accountId);
-                  showToast("Series split", "success", 2000);
-                } catch (err) {
-                  info.revert();
-                  showToast(`Failed to split series: ${(err as Error).message}`, "error");
-                }
-              }
-
-              return;
-            }
-
-            showToast("Resizing event...", "loading");
-            try {
-              const updated = await plugin.api.patchEventTimes(
-                account,
-                calEvent.calendarId,
-                calEvent.id,
-                info.event.startStr,
-                info.event.endStr
-              );
-              dispatch({ type: "UPDATE_EVENT", payload: { id: updated.id, changes: updated } });
-              showToast("Event resized", "success", 2000);
-            } catch (err) {
-              info.revert();
-              showToast(`Failed to resize event: ${(err as Error).message}`, "error");
-            }
-          })();
-          }}
-
-          eventClick={(info) => { void (async () => {
-            const calEvent = info.event.extendedProps.calEvent as CalEvent;
-            if (calEvent.recurringEventId) {
-              const account = plugin.data.accounts.find(a => a.accountId === calEvent.accountId);
-              if (account) {
-                showToast("Loading event...", "loading");
-                try {
-                  const master = await plugin.api.getEvent(account, calEvent.calendarId, calEvent.recurringEventId);
-                  setToast(null);
-                  setEditingEvent({ ...calEvent, recurrence: master.recurrence });
                   return;
-                } catch {
-                  setToast(null);
-                  // fall through — open modal without recurrence data rather than blocking
+                }
+
+                if (choice === "this") {
+                  showToast("Moving event...", "loading");
+                  try {
+                    const updated = await plugin.api.patchEventTimes(
+                      account,
+                      calEvent.calendarId,
+                      calEvent.id,
+                      info.event.startStr,
+                      info.event.endStr
+                    );
+                    dispatch({ type: "UPDATE_EVENT", payload: { id: updated.id, changes: updated } });
+                    showToast("Event moved", "success", 2000);
+                  } catch (err) {
+                    info.revert();
+                    showToast(`Failed to move event: ${(err as Error).message}`, "error");
+                  }
+                } else if (choice === "following") {
+                  showToast("Splitting series...", "loading");
+                  try {
+                    await plugin.api.splitRecurringSeries(
+                      account,
+                      calEvent.calendarId,
+                      calEvent,
+                      {
+                        start: info.event.startStr,
+                        end: info.event.endStr,
+                        title: calEvent.title,
+                        allDay: calEvent.allDay,
+                      }
+                    );
+                    await fetchCalendarRef.current?.(calEvent.calendarId, calEvent.accountId);
+                    showToast("Series split", "success", 2000);
+                  } catch (err) {
+                    info.revert();
+                    showToast(`Failed to split series: ${(err as Error).message}`, "error");
+                  }
+                }
+
+                return;
+              }
+
+              showToast("Moving event...", "loading");
+              try {
+                const updated = await plugin.api.patchEventTimes(
+                  account,
+                  calEvent.calendarId,
+                  calEvent.id,
+                  info.event.startStr,
+                  info.event.endStr
+                );
+                dispatch({ type: "UPDATE_EVENT", payload: { id: updated.id, changes: updated } });
+                showToast("Event moved", "success", 2000);
+              } catch (err) {
+                info.revert();
+                showToast(`Failed to move event: ${(err as Error).message}`, "error");
+              }
+            })();
+          }}
+
+          eventResize={(info) => {
+            void (async () => {
+              const calEvent = info.event.extendedProps.calEvent as CalEvent;
+              const account = plugin.data.accounts.find(
+                (a) => a.accountId === calEvent.accountId
+              );
+
+              if (!account) {
+                info.revert();
+                return;
+              }
+
+              if (calEvent.recurringEventId) {
+                const choice = await askRecurring(calEvent);
+                if (!choice) {
+                  info.revert();
+                  return;
+                }
+
+                if (choice === "this") {
+                  showToast("Resizing event...", "loading");
+                  try {
+                    const updated = await plugin.api.patchEventTimes(
+                      account,
+                      calEvent.calendarId,
+                      calEvent.id,
+                      info.event.startStr,
+                      info.event.endStr
+                    );
+                    dispatch({ type: "UPDATE_EVENT", payload: { id: updated.id, changes: updated } });
+                    showToast("Event resized", "success", 2000);
+                  } catch (err) {
+                    info.revert();
+                    showToast(`Failed to resize event: ${(err as Error).message}`, "error");
+                  }
+                } else if (choice === "following") {
+                  showToast("Splitting series...", "loading");
+                  try {
+                    await plugin.api.splitRecurringSeries(
+                      account,
+                      calEvent.calendarId,
+                      calEvent,
+                      {
+                        start: info.event.startStr,
+                        end: info.event.endStr,
+                        title: calEvent.title,
+                        allDay: calEvent.allDay,
+                      }
+                    );
+                    await fetchCalendarRef.current?.(calEvent.calendarId, calEvent.accountId);
+                    showToast("Series split", "success", 2000);
+                  } catch (err) {
+                    info.revert();
+                    showToast(`Failed to split series: ${(err as Error).message}`, "error");
+                  }
+                }
+
+                return;
+              }
+
+              showToast("Resizing event...", "loading");
+              try {
+                const updated = await plugin.api.patchEventTimes(
+                  account,
+                  calEvent.calendarId,
+                  calEvent.id,
+                  info.event.startStr,
+                  info.event.endStr
+                );
+                dispatch({ type: "UPDATE_EVENT", payload: { id: updated.id, changes: updated } });
+                showToast("Event resized", "success", 2000);
+              } catch (err) {
+                info.revert();
+                showToast(`Failed to resize event: ${(err as Error).message}`, "error");
+              }
+            })();
+          }}
+
+          eventClick={(info) => {
+            void (async () => {
+              const calEvent = info.event.extendedProps.calEvent as CalEvent;
+              if (calEvent.recurringEventId) {
+                const account = plugin.data.accounts.find(a => a.accountId === calEvent.accountId);
+                if (account) {
+                  showToast("Loading event...", "loading");
+                  try {
+                    const master = await plugin.api.getEvent(account, calEvent.calendarId, calEvent.recurringEventId);
+                    setToast(null);
+                    setEditingEvent({ ...calEvent, recurrence: master.recurrence });
+                    return;
+                  } catch {
+                    setToast(null);
+                    // fall through — open modal without recurrence data rather than blocking
+                  }
                 }
               }
-            }
-            setEditingEvent(calEvent);
-          })();
+              setEditingEvent(calEvent);
+            })();
           }}
 
           select={(info) => {
@@ -895,32 +898,34 @@ export default function CalendarPanel({ plugin }: Props) {
           event={editingEvent}
           askRecurring={askRecurring}
           onClose={() => setEditingEvent(null)}
-          onRespond={async (status) => {
-            const account = plugin.data.accounts.find(
-              (a) => a.accountId === editingEvent.accountId
-            );
-            if (!account) return;
-            try {
-              let eventId = editingEvent.id;
-              if (editingEvent.recurringEventId) {
-                const choice = await askRecurring(editingEvent, {
-                  title: "RSVP to recurring event",
-                  hideFollowing: true,
-                  showAll: true,
-                });
-                if (!choice) return;
-                if (choice === "all") {
-                  eventId = editingEvent.recurringEventId;
+          onRespond={(status) => {
+            void (async () => {
+              const account = plugin.data.accounts.find(
+                (a) => a.accountId === editingEvent.accountId
+              );
+              if (!account) return;
+              try {
+                let eventId = editingEvent.id;
+                if (editingEvent.recurringEventId) {
+                  const choice = await askRecurring(editingEvent, {
+                    title: "RSVP to recurring event",
+                    hideFollowing: true,
+                    showAll: true,
+                  });
+                  if (!choice) return;
+                  if (choice === "all") {
+                    eventId = editingEvent.recurringEventId;
+                  }
                 }
+                showToast("Updating response...", "loading");
+                const updated = await plugin.api.patchAttendeeResponse(account, editingEvent.calendarId, eventId, editingEvent.attendees, status);
+                dispatch({ type: "UPDATE_EVENT", payload: { id: updated.id, changes: updated } });
+                setEditingEvent(null);
+                showToast("Response updated", "success", 2000);
+              } catch (err) {
+                showToast(`Failed to update response: ${(err as Error).message}`, "error");
               }
-              showToast("Updating response...", "loading");
-              const updated = await plugin.api.patchAttendeeResponse(account, editingEvent.calendarId, eventId, editingEvent.attendees, status);
-              dispatch({ type: "UPDATE_EVENT", payload: { id: updated.id, changes: updated } });
-              setEditingEvent(null);
-              showToast("Response updated", "success", 2000);
-            } catch (err) {
-              showToast(`Failed to update response: ${(err as Error).message}`, "error");
-            }
+            })();
           }}
           onSave={async (updates) => {
             const account = plugin.data.accounts.find(
@@ -957,52 +962,54 @@ export default function CalendarPanel({ plugin }: Props) {
                 updates
               );
               setEditingEvent(null);
-              await fetchCalendarRef.current?.(editingEvent.calendarId, editingEvent!.accountId);
+              await fetchCalendarRef.current?.(editingEvent.calendarId, editingEvent.accountId);
               showToast("Series split", "success", 2000);
             } catch (err) {
               showToast(`Failed to split series: ${(err as Error).message}`, "error");
             }
           }}
 
-          onDelete={async () => {
-            if (!window.confirm(`Delete "${editingEvent.title}"?`)) return;
-            const account = plugin.data.accounts.find(
-              (a) => a.accountId === editingEvent.accountId
-            );
-            if (!account) return;
-            showToast("Deleting...", "loading");
-            try {
-              if (editingEvent.recurringEventId) {
-                const choice = await askRecurring(editingEvent);
-                if (!choice) { setToast(null); return; }
-                if (choice === "this") {
+          onDelete={() => {
+            void (async () => {
+              if (!window.confirm(`Delete "${editingEvent.title}"?`)) return;
+              const account = plugin.data.accounts.find(
+                (a) => a.accountId === editingEvent.accountId
+              );
+              if (!account) return;
+              showToast("Deleting...", "loading");
+              try {
+                if (editingEvent.recurringEventId) {
+                  const choice = await askRecurring(editingEvent);
+                  if (!choice) { setToast(null); return; }
+                  if (choice === "this") {
+                    const res = await plugin.api.deleteWithAuth(
+                      account,
+                      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(editingEvent.calendarId)}/events/${editingEvent.id}`
+                    );
+                    if (res.status < 200 || res.status >= 300) throw new Error("Failed to delete event");
+                    dispatch({ type: "REMOVE_EVENT", payload: editingEvent.id });
+                  } else {
+                    await plugin.api.deleteRecurringAndFollowing(
+                      account,
+                      editingEvent.calendarId,
+                      editingEvent
+                    );
+                    await fetchCalendarRef.current?.(editingEvent.calendarId, editingEvent.accountId);
+                  }
+                } else {
                   const res = await plugin.api.deleteWithAuth(
                     account,
                     `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(editingEvent.calendarId)}/events/${editingEvent.id}`
                   );
                   if (res.status < 200 || res.status >= 300) throw new Error("Failed to delete event");
                   dispatch({ type: "REMOVE_EVENT", payload: editingEvent.id });
-                } else {
-                  await plugin.api.deleteRecurringAndFollowing(
-                    account,
-                    editingEvent.calendarId,
-                    editingEvent
-                  );
-                  await fetchCalendarRef.current?.(editingEvent.calendarId, editingEvent.accountId);
                 }
-              } else {
-                const res = await plugin.api.deleteWithAuth(
-                  account,
-                  `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(editingEvent.calendarId)}/events/${editingEvent.id}`
-                );
-                if (res.status < 200 || res.status >= 300) throw new Error("Failed to delete event");
-                dispatch({ type: "REMOVE_EVENT", payload: editingEvent.id });
+                setEditingEvent(null);
+                showToast("Event deleted", "success", 2000);
+              } catch (err) {
+                showToast(`Failed to delete event: ${(err as Error).message}`, "error");
               }
-              setEditingEvent(null);
-              showToast("Event deleted", "success", 2000);
-            } catch (err) {
-              showToast(`Failed to delete event: ${(err as Error).message}`, "error");
-            }
+            })();
           }}
         />
       )}
@@ -1060,8 +1067,8 @@ export default function CalendarPanel({ plugin }: Props) {
               : undefined
           }
           onDuplicate={() => handleDuplicate(contextMenu.calEvent)}
-          onRespond={(status) => handleRespond(contextMenu.calEvent, status)}
-          onDelete={() => handleDelete(contextMenu.calEvent)}
+          onRespond={(status) => { void handleRespond(contextMenu.calEvent, status); }}
+          onDelete={() => { void handleDelete(contextMenu.calEvent); }}
         />
       )}
     </div>

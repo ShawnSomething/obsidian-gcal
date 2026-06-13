@@ -3,6 +3,53 @@ import { TokenStore } from "../auth/TokenStore";
 import { CalendarMeta, CalEvent, Attendee } from "../context/CalendarContext";
 import { requestUrl, RequestUrlResponse } from "obsidian";
 
+interface GoogleApiError {
+  error?: { message?: string };
+}
+
+interface GoogleCalendarListItem {
+  id: string;
+  summary: string;
+  backgroundColor?: string;
+  accessRole?: string;
+}
+
+interface GoogleCalendarListResponse {
+  items?: GoogleCalendarListItem[];
+}
+
+interface GoogleAttendee {
+  email: string;
+  responseStatus: "accepted" | "declined" | "tentative" | "needsAction";
+  self?: boolean;
+}
+
+interface GoogleEventItem {
+  id: string;
+  iCalUID: string;
+  summary?: string;
+  start?: { dateTime?: string; date?: string };
+  end?: { dateTime?: string; date?: string };
+  htmlLink?: string;
+  colorId?: string;
+  attendees?: GoogleAttendee[];
+  recurrence?: string[];
+  recurringEventId?: string;
+  location?: string;
+  description?: string;
+  hangoutLink?: string;
+  status?: string;
+}
+
+interface GoogleEventsResponse {
+  items?: GoogleEventItem[];
+}
+
+interface GoogleTokenResponse {
+  access_token: string;
+  expires_in: number;
+}
+
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 
 export class GoogleCalendarAPI {
@@ -102,15 +149,15 @@ export class GoogleCalendarAPI {
 		);
 
 		if (response.status < 200 || response.status >= 300) {
-			const err = response.json;
+			const err = response.json as GoogleApiError;
 			throw new Error(
 				err.error?.message ??
 					`Failed to fetch calendar list for ${account.accountId}`,
 			);
 		}
 
-		const data = response.json;
-		return (data.items ?? []).map((item: any) => ({
+		const data = response.json as GoogleCalendarListResponse;
+		return (data.items ?? []).map((item) => ({
 			id: item.id,
 			accountId: account.accountId,
 			summary: item.summary,
@@ -161,11 +208,11 @@ export class GoogleCalendarAPI {
 		});
 
 		if (response.status < 200 || response.status >= 300) {
-			const err = response.json;
+			const err = response.json as GoogleApiError;
 			throw new Error(err.error?.message ?? "Failed to create event");
 		}
 
-		const data = response.json;
+		const data = response.json as GoogleEventItem;
 		return this.mapItem(data, calendarId, account.accountId);
 	}
 
@@ -188,17 +235,17 @@ export class GoogleCalendarAPI {
 		);
 
 		if (response.status < 200 || response.status >= 300) {
-			const err = response.json;
+			const err = response.json as GoogleApiError;
 			throw new Error(
 				err.error?.message ??
 					`Failed to fetch events for ${calendarId}`,
 			);
 		}
 
-		const data = response.json;
+		const data = response.json as GoogleEventsResponse;
 		return (data.items ?? [])
-			.filter((item: any) => item.status !== "cancelled")
-			.map((item: any) =>
+			.filter((item) => item.status !== "cancelled")
+			.map((item) =>
 				this.mapItem(item, calendarId, account.accountId),
 			);
 	}
@@ -218,11 +265,11 @@ export class GoogleCalendarAPI {
 		});
 
 		if (response.status < 200 || response.status >= 300) {
-			const err = response.json;
+			const err = response.json as GoogleApiError;
 			throw new Error(err.error?.message ?? "Failed to update event");
 		}
 
-		const data = response.json;
+		const data = response.json as GoogleEventItem;
 		return this.mapItem(data, calendarId, account.accountId);
 	}
 
@@ -284,11 +331,11 @@ export class GoogleCalendarAPI {
 		});
 
 		if (response.status < 200 || response.status >= 300) {
-			const err = response.json;
+			const err = response.json as GoogleApiError;
 			throw new Error(err.error?.message ?? "Failed to update event");
 		}
 
-		const data = response.json;
+		const data = response.json as GoogleEventItem;
 		return this.mapItem(data, calendarId, account.accountId);
 	}
 
@@ -296,18 +343,18 @@ export class GoogleCalendarAPI {
 		account: AccountConfig,
 		calendarId: string,
 		eventId: string,
-	): Promise<any> {
+	): Promise<GoogleEventItem> {
 		const response = await this.getWithAuth(
 			account,
 			`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
 		);
 		if (response.status < 200 || response.status >= 300) {
-			const err = response.json;
+			const err = response.json as GoogleApiError;
 			throw new Error(
 				err.error?.message ?? `Failed to fetch event ${eventId}`,
 			);
 		}
-		return response.json;
+		return response.json as GoogleEventItem;
 	}
 
 	async splitRecurringSeries(
@@ -359,7 +406,7 @@ export class GoogleCalendarAPI {
 			{ recurrence: truncatedRecurrence },
 		);
 		if (patchRes.status < 200 || patchRes.status >= 300) {
-			const err = patchRes.json;
+			const err = patchRes.json  as GoogleApiError;
 			throw new Error(
 				err.error?.message ?? "Failed to truncate master series",
 			);
@@ -431,7 +478,7 @@ export class GoogleCalendarAPI {
 		const masterUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${instance.recurringEventId}`;
 		const masterRes = await this.getWithAuth(account, masterUrl);
 		if (masterRes.status < 200 || masterRes.status >= 300) throw new Error("Failed to fetch master event");
-		const master = masterRes.json;
+		const master = masterRes.json as GoogleEventItem;
 
 		const originalRecurrence: string[] = master.recurrence ?? [];
 
@@ -489,18 +536,18 @@ export class GoogleCalendarAPI {
 		});
 
 		if (response.status < 200 || response.status >= 300) {
-			const err = response.json;
+			const err = response.json as GoogleApiError;
 			throw new Error(
 				err.error?.message ?? "Failed to update response status",
 			);
 		}
 
-		const data = response.json;
+		const data = response.json as GoogleEventItem;
 		return this.mapItem(data, calendarId, account.accountId);
 	}
 
 	private mapItem(
-		item: any,
+		item: GoogleEventItem,
 		calendarId: string,
 		accountId: string,
 	): CalEvent {
@@ -510,18 +557,18 @@ export class GoogleCalendarAPI {
 			calendarId,
 			accountId,
 			title: item.summary ?? "(No title)",
-			start: item.start?.dateTime ?? item.start?.date,
-			end: item.end?.dateTime ?? item.end?.date,
+			start: item.start?.dateTime ?? item.start?.date ?? "",
+			end: item.end?.dateTime ?? item.end?.date ?? "",
 			allDay: !item.start?.dateTime,
 			htmlLink: item.htmlLink ?? "",
 			color: item.colorId ?? "",
-			attendees: (item.attendees ?? []).map((a: any) => ({
+			attendees: (item.attendees ?? []).map((a: GoogleAttendee) => ({
 				email: a.email,
 				responseStatus: a.responseStatus,
 				self: a.self ?? false,
 			})),
 			selfResponseStatus:
-				item.attendees?.find((a: any) => a.self)?.responseStatus ??
+				item.attendees?.find((a: GoogleAttendee) => a.self)?.responseStatus ??
 				"accepted",
 			recurrence: item.recurrence,
 			recurringEventId: item.recurringEventId,
@@ -582,7 +629,7 @@ export class GoogleCalendarAPI {
 			);
 		}
 
-		const tokens = response.json;
+		const tokens = response.json as GoogleTokenResponse;
 		await this.tokenStore.updateTokens(
 			account.accountId,
 			tokens.access_token,

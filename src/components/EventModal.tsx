@@ -133,7 +133,7 @@ export default function EventModal(props: Props) {
       const finalStart = allDay ? startISO.slice(0, 10) : startISO;
       const finalEnd = allDay ? endISO.slice(0, 10) : endISO;
 
-      if (isCreate) {
+      if (props.mode === "create") {
         const cal = state.calendars.find(c => c.id === selectedCalendarId);
         let recurrence: string[] | undefined;
         if (repeat) {
@@ -150,7 +150,7 @@ export default function EventModal(props: Props) {
           });
           recurrence = [rrule];
         }
-        await (props as CreateProps).onSave({
+        await props.onSave({
           title,
           start: finalStart,
           end: finalEnd,
@@ -164,7 +164,7 @@ export default function EventModal(props: Props) {
         return;
       }
 
-      const editProps = props as EditProps;
+      const editProps = props;
       let recurrence: string[] | undefined;
       if (repeat) {
         const rrule = buildRRule({
