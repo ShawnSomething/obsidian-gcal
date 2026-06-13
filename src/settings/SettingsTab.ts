@@ -17,8 +17,6 @@ export class SettingsTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		new Setting(containerEl).setName("GCal Sidebar").setHeading();
-
 		// --- Client Credentials ---
 		new Setting(containerEl)
 			.setName("Google Cloud Credentials")
