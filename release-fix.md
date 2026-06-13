@@ -1,131 +1,75 @@
-# GCal Sidebar — Release Fix Session
+# GCal Sidebar — Release Fix Session v2
 
-## Context
-Plugin is published at v1.0.2. Obsidian's automated review is flagging errors and warnings that need to be resolved for future releases.
+## Status
+All **errors** resolved. Plugin is releasable. Remaining items are warnings/recommendations only.
+
+---
+
+## What was fixed this session
+
+### Errors (resolved)
+- **CalendarToggle.tsx** — `onMouseEnter`/`onMouseLeave` inline style mutations replaced with `.gcal-calendar-item` CSS class + hover rule
+- **main.ts** — `minAppVersion` bumped to `"1.13.1"` in manifest.json; `detachLeavesOfType` removed from `onunload`
+- **SettingsTab.ts** — `createEl("h2"/"h3")` replaced with `new Setting().setName().setHeading()`; plugin name heading removed; `setWarning()` → `setDestructive()`; `innerHTML` replaced with `createEl` DOM API
+- **manifest.json** — `minAppVersion` set to `"1.13.1"` to satisfy `setDestructive` + `revealLeaf` API version requirements
+- `npm install obsidian@latest` run to get updated types
+
+### Warnings (resolved)
+- **CalendarPanel.tsx** — `CommandBridge` unused import removed; all `setTimeout/clearTimeout/setInterval/clearInterval` prefixed with `window.`; timer ref types changed to `number`; `document` → `activeDocument` for view popover handler
+- **CalendarToggle.tsx, ContextMenu.tsx, MiniMonth.tsx** — `document` → `activeDocument`
+
+---
+
+## Remaining warnings (won't block release)
+
+### GoogleCalendarAPI.ts + OAuthManager.ts
+- `fetch` → `requestUrl` (Obsidian built-in HTTP client, for popout window compatibility)
+- Unsafe `any` types throughout — needs typed raw response interfaces (`GoogleRawEvent`, `GoogleRawCalendarItem`, etc.)
+- Full rewrite prepared but not applied yet — high risk, test thoroughly if applied
+
+### OAuthManager.ts
+- `require()` style import forbidden — `const { exec } = require("child_process")` in `openBrowser()`
+  - Fix: add `import { exec } from "child_process"` at top of file, remove inline require
+
+### CalendarPanel.tsx
+- `window.confirm` discouraged — two instances (lines 141, 965)
+- Unhandled promises — many fire-and-forget async calls need `void` prefix or `.catch` handler
+- Promise-returning functions passed to void-return attributes (FC event handlers)
+- Unnecessary type assertions throughout
+
+### EventModal.tsx
+- Unnecessary type assertions throughout
+
+### main.ts
+- Unsafe `any` member access on `rightSplit` and `leaf.parent` — these are intentional `as any` casts to access undocumented Obsidian internals; hard to fix without breaking the open/collapse toggle behaviour
+- Unhandled promises in command callbacks
+
+### SettingsTab.ts
+- `display` method deprecated since 1.13.0 — should use `getSettingDefinitions` (different API shape, deferred)
+- `async display()` returns Promise where void expected
+- Unsafe `.message` access on caught error
+
+---
+
+## Releases recommendations
+- **Missing GitHub artifact attestations** — release assets (`main.js`, `styles.css`) should have cryptographic provenance via GitHub Actions artifact attestations. Requires setting up a GitHub Actions build pipeline. See: https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds
+
+---
+
+## Behaviour warning
+- **Shell execution via `child_process`** — `OAuthManager.openBrowser()` uses `exec` to open the browser. This is intentional (OAuth flow requires opening a browser). Flagged because it gives the plugin shell access. No fix needed — just be aware reviewers may ask about it.
+
+---
+
+## CSS warnings
+- `styles.css:615, 870` — `!important` usage. Both are on `.gcal-event-needs-action` (crosshatch background) and `.fc-timeGridDay-view .fc-day-today`. The `!important` on the crosshatch is required because FullCalendar sets `background` as an inline style — removing it would break the needsAction visual. The today highlight suppression also needs it to override FC defaults.
+
+---
 
 ## Files to paste at start of next thread
 - `src/main.ts`
-- `src/components/CalendarToggle.tsx`
-- `src/settings/SettingsTab.ts`
 - `src/api/GoogleCalendarAPI.ts`
 - `src/auth/OAuthManager.ts`
-- `src/components/CalendarPanel.tsx` (current — already has midnight auto-advance feature)
-- `src/components/ContextMenu.tsx`
-- `src/components/MiniMonth.tsx`
-
----
-
-## Errors (must fix — block release)
-
-### CalendarToggle.tsx:132,135
-Sets inline styles directly. Must use CSS classes instead.
-Rule: `obsidianmd/no-static-styles-assignment`
-
-### main.ts:69,80,141,150
-Uses Obsidian APIs newer than declared `minAppVersion`.
-Rule: `obsidianmd/no-unsupported-api`
-Fix: either bump `minAppVersion` in `manifest.json` to match, or replace the calls with supported equivalents.
-
-### main.ts:134-136
-Detaches leaf in `onunload`. Obsidian resets the leaf to default location on next load if detached.
-Rule: `obsidianmd/no-detach-leaves-on-unload`
-Fix: remove the detach call — just let the leaf persist.
-
-### SettingsTab.ts:20,23,56
-Creates HTML heading elements directly. Must use `new Setting(containerEl).setName(...).setHeading()`.
-Rule: `obsidianmd/prefer-setting-heading`
-
----
-
-## Warnings (won't block, but clean up)
-
-### window.setTimeout / clearTimeout / setInterval / clearInterval
-All bare `setTimeout`, `clearTimeout`, `setInterval`, `clearInterval` calls in `CalendarPanel.tsx` need `window.` prefix for popout window compatibility.
-Lines: 99, 102, 384, 385, 402, 492, 509
-
-### document → activeDocument
-All direct `document` references need to be `activeDocument` for popout window compatibility.
-Files: CalendarPanel.tsx:482,483 — CalendarToggle.tsx:16,17 — ContextMenu.tsx:27,28,73 — MiniMonth.tsx:32,33
-
-### fetch → requestUrl
-All `fetch` calls should use Obsidian's built-in `requestUrl` instead.
-Files: GoogleCalendarAPI.ts (multiple), OAuthManager.ts:103,125
-Note: `requestUrl` has a different API shape — this needs care.
-
-### Unsafe `any` types in GoogleCalendarAPI.ts
-Google API responses are untyped. Fix by adding a raw response interface (e.g. `GoogleEventRaw`) and typing the JSON parse result against it. Lots of lines but the pattern is the same throughout.
-
-### Deprecated APIs in SettingsTab.ts
-- `setWarning` → use `setDestructive` (line 71)
-- `display` → use `getSettingDefinitions` (lines 76, 108)
-
-### innerHTML usage in SettingsTab.ts:116-120
-Don't write to DOM via innerHTML. Rewrite with `createEl` or DOM API calls.
-
-### Unused import
-`CommandBridge` imported in `CalendarPanel.tsx:6` but never used. Remove it.
-
-### window.confirm
-`CalendarPanel.tsx:141,965` — Obsidian discourages `window.confirm`. Low priority, unlikely to block.
-
-### Promise handling warnings
-Various places where async functions are passed where void is expected. Low priority.
-
----
-
-## Changes made this session
-
-### Midnight auto-advance (CalendarPanel.tsx)
-
-Previously the calendar never updated its anchor date automatically. If Obsidian stayed open overnight, the user had to manually click T to jump to today.
-
-Three additions to `CalendarPanel.tsx`:
-
-**1. `selectedDateRef`** — tracks `state.selectedDate` via a ref so the midnight timer can read the current date without a stale closure.
-```typescript
-const selectedDateRef = useRef(state.selectedDate);
-// effect to keep in sync:
-useEffect(() => { selectedDateRef.current = state.selectedDate; }, [state.selectedDate]);
-```
-
-**2. `activeViewRef`** — same pattern for `activeView`, so the timer knows which view is active at midnight.
-```typescript
-const activeViewRef = useRef(activeView);
-// effect to keep in sync:
-useEffect(() => { activeViewRef.current = activeView; }, [activeView]);
-```
-
-**3. Midnight timer effect** — schedules itself to fire at the next midnight, then reschedules. Behavior differs per view:
-- **Day**: always advances (today is always the anchor)
-- **3-day**: always advances (today is always day 1)
-- **Week**: only advances when today has moved past the end of the current week window (i.e. Sunday rolled over into a new week)
-
-```typescript
-useEffect(() => {
-  let timerId: ReturnType<typeof setTimeout>;
-  const schedule = () => {
-    const now = new Date();
-    const midnight = new Date(now);
-    midnight.setHours(24, 0, 0, 0);
-    timerId = setTimeout(() => {
-      const newToday = new Date();
-      const newTodayStart = new Date(newToday);
-      newTodayStart.setHours(0, 0, 0, 0);
-      const view = activeViewRef.current;
-      const shouldAdvance = view === "week"
-        ? newTodayStart.getTime() >= getViewWindow(selectedDateRef.current, view).timeMax.getTime()
-        : true;
-      if (shouldAdvance) {
-        dispatch({ type: "SET_DATE", payload: newToday });
-        calendarRef.current?.getApi().today();
-        fetchAllWindowsRef.current?.(newToday);
-      }
-      schedule();
-    }, midnight.getTime() - now.getTime());
-  };
-  schedule();
-  return () => clearTimeout(timerId);
-}, []);
-```
-
-The timer reschedules itself inside the callback so it keeps firing across multiple days without resetting. Cleanup via `clearTimeout` on unmount.
+- `src/components/CalendarPanel.tsx`
+- `src/components/EventModal.tsx`
+- `src/settings/SettingsTab.ts`
