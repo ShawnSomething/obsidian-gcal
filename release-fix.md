@@ -1,75 +1,120 @@
-# GCal Sidebar — Release Fix Session v2
+# GCal Sidebar — Warning Fix Checklist
 
-## Status
-All **errors** resolved. Plugin is releasable. Remaining items are warnings/recommendations only.
+## Context
 
----
+The Obsidian automated review system flagged warnings blocking the plugin update.
+The **only hard blocker** from the review was:
 
-## What was fixed this session
+> "Unexpected use of 'fetch'. Use the built-in `requestUrl` function instead."
+> - src/api/GoogleCalendarAPI.ts:28, src/api/GoogleCalendarAPI.ts:38, src/api/GoogleCalendarAPI.ts:50, src/api/GoogleCalendarAPI.ts:66, src/api/GoogleCalendarAPI.ts:82, src/api/GoogleCalendarAPI.ts:561, src/auth/OAuthManager.ts:103, src/auth/OAuthManager.ts:125
 
-### Errors (resolved)
-- **CalendarToggle.tsx** — `onMouseEnter`/`onMouseLeave` inline style mutations replaced with `.gcal-calendar-item` CSS class + hover rule
-- **main.ts** — `minAppVersion` bumped to `"1.13.1"` in manifest.json; `detachLeavesOfType` removed from `onunload`
-- **SettingsTab.ts** — `createEl("h2"/"h3")` replaced with `new Setting().setName().setHeading()`; plugin name heading removed; `setWarning()` → `setDestructive()`; `innerHTML` replaced with `createEl` DOM API
-- **manifest.json** — `minAppVersion` set to `"1.13.1"` to satisfy `setDestructive` + `revealLeaf` API version requirements
-- `npm install obsidian@latest` run to get updated types
+Everything else in this doc was identified from a broader static analysis pass.
+Those fixes are good hygiene but **did not cause the review rejection**.
 
-### Warnings (resolved)
-- **CalendarPanel.tsx** — `CommandBridge` unused import removed; all `setTimeout/clearTimeout/setInterval/clearInterval` prefixed with `window.`; timer ref types changed to `number`; `document` → `activeDocument` for view popover handler
-- **CalendarToggle.tsx, ContextMenu.tsx, MiniMonth.tsx** — `document` → `activeDocument`
+**Golden rule: zero behaviour change. Every fix here must leave the plugin working exactly as it does today.**
 
 ---
 
-## Remaining warnings (won't block release)
+## What's Done
 
-### GoogleCalendarAPI.ts + OAuthManager.ts
-- `fetch` → `requestUrl` (Obsidian built-in HTTP client, for popout window compatibility)
-- Unsafe `any` types throughout — needs typed raw response interfaces (`GoogleRawEvent`, `GoogleRawCalendarItem`, etc.)
-- Full rewrite prepared but not applied yet — high risk, test thoroughly if applied
+### CalendarToggle.tsx ✅
+- [x] `document` → `activeDocument` (lines 16, 17)
+  - Both `addEventListener`/`removeEventListener` calls. `activeDocument` is an Obsidian global, no import needed.
 
-### OAuthManager.ts
-- `require()` style import forbidden — `const { exec } = require("child_process")` in `openBrowser()`
-  - Fix: add `import { exec } from "child_process"` at top of file, remove inline require
+### ContextMenu.tsx ✅
+- [x] `document` → `activeDocument` (lines 27, 28, 73)
+  - Both event listener calls + `document.body` → `activeDocument.body` in `createPortal`.
 
-### CalendarPanel.tsx
-- `window.confirm` discouraged — two instances (lines 141, 965)
-- Unhandled promises — many fire-and-forget async calls need `void` prefix or `.catch` handler
-- Promise-returning functions passed to void-return attributes (FC event handlers)
-- Unnecessary type assertions throughout
+### MiniMonth.tsx ✅
+- [x] `document` → `activeDocument` (lines 32, 33)
+  - Both event listener calls.
 
-### EventModal.tsx
-- Unnecessary type assertions throughout
+### OAuthManager.ts ✅
+- [x] `require()` import forbidden (line 156)
+  - Added `import { exec } from "child_process"` at top. Removed inline `require` from `openBrowser()`.
 
-### main.ts
-- Unsafe `any` member access on `rightSplit` and `leaf.parent` — these are intentional `as any` casts to access undocumented Obsidian internals; hard to fix without breaking the open/collapse toggle behaviour
-- Unhandled promises in command callbacks
+### CalendarPanel.tsx ✅ (Step A+B)
+- [x] Removed 6 redundant `!` assertions:
+  - 5x `editingEvent!` → `editingEvent` inside `onSplitSeries` (already narrowed by `{editingEvent && ...}` guard)
+  - 1x `contextMenu.calEvent.hangoutLink!` → `hangoutLink` (already in truthy branch of ternary)
+- [x] Added `void` to 11 floating promises:
+  - `navigateNextRef` + `navigatePrevRef`: `fetchWindowRef.current?.then()` and `fetchAllWindowsRef.current?.()`
+  - `handleDateSelect`: 5 calls across next/prev/arbitrary-jump branches
+  - `useEffect([activeView])`: `fetchAllWindowsRef.current?.(state.selectedDate)`
+  - `setInterval` poll: wrapped in `{ void ...; }`
+  - `commandBridge.goToToday` and `commandBridge.refresh`
+  - midnight timer: `fetchAllWindowsRef.current?.(newToday)`
+- Updated file saved — use it as the source for Step C.
+
+### GoogleCalendarAPI.ts ✅ — `fetch` → `requestUrl`
+- [x] Added `import { requestUrl, RequestUrlResponse } from "obsidian"`
+- [x] All 5 helper methods (`getWithAuth`, `deleteWithAuth`, `patchWithAuth`, `putWithAuth`, `postWithAuth`) converted
+  - Return type changed: `Promise<Response>` → `Promise<RequestUrlResponse>`
+  - Call shape: `fetch(url, { method, headers, body })` → `requestUrl({ url, method, headers, body })`
+- [x] `doRefresh` converted — URLSearchParams body changed to `.toString()`
+- [x] All `response.ok` → `response.status < 200 || response.status >= 300` throughout file
+- [x] All `await response.json()` → `response.json` (property, not method) throughout file
+- [x] `response.statusText` → `response.status` in doRefresh error string (statusText doesn't exist on RequestUrlResponse)
+
+### OAuthManager.ts ✅ — `fetch` → `requestUrl`
+- [x] Added `import { requestUrl } from "obsidian"`
+- [x] `exchangeCodeForTokens`: `fetch` → `requestUrl`, URLSearchParams body → `.toString()`, `.ok` → status check, `await response.json()` → `response.json`
+- [x] `fetchAccountInfo`: `fetch` → `requestUrl`, same response pattern
+
+### CalendarPanel.tsx ✅ — `res.ok` follow-on fix
+- [x] Two direct `deleteWithAuth` call sites in CalendarPanel were checking `res.ok`
+  - Both changed to `res.status < 200 || res.status >= 300`
+  - Root cause: changing the return type of `deleteWithAuth` from `Promise<Response>` to `Promise<RequestUrlResponse>` cascades to any caller that reads the response directly
+
+---
+
+## Key Learnings — `requestUrl` vs `fetch`
+
+- `RequestUrlResponse` has no `.ok` property — always check `.status` directly
+- `RequestUrlResponse` has no `.statusText` — use `.status` (a number) in error strings
+- `response.json` is a pre-parsed property, not a method — no `await`, no `()`
+- URLSearchParams body must be `.toString()` — `requestUrl` takes `string | ArrayBuffer`, not URLSearchParams
+- `requestUrl` does NOT throw on non-2xx HTTP status codes — it returns the response with the status, same as `fetch`. Only throws on network-level failures (DNS, connection refused etc.)
+- Changing return type of a helper method cascades — any caller in any file that reads the response needs the same `.ok` → `.status` update. Check all call sites, not just the file being changed.
+
+---
+
+## What's Remaining
+
+### CalendarPanel.tsx — Step C ← NEXT
+- [ ] `eventDrop`, `eventResize`, `eventClick` are `async` but FC types expect `() => void`
+  - Fix: wrap each in `(info) => { void (async () => { ... })(); }`
+- [ ] Same fix for EventModal.tsx line 635
+- Need current CalendarPanel.tsx (Step A+B+res.ok version) + EventModal.tsx
+
+### CalendarPanel.tsx — unsafe `any`
+- [ ] Lines 856, 858: `calEvent.recurrence` typed as `any` — comes from raw API response
+  - Pairs with the `requestUrl` rewrite (typed raw responses fix this)
+
+### EventModal.tsx — unnecessary type assertions
+- [ ] Lines 76, 79, 82, 85, 88, 91, 96, 97, 102, 155, 169, 601, 613, 615, 630
+  - Need EventModal.tsx to see exact assertions
+
+### main.ts — unhandled promises
+- [ ] Lines 49, 61, 69, 80, 137, 146 — `void` prefix needed
+- [ ] Unsafe `any` on undocumented Obsidian internals (lines 56, 65, 68, 73, 75, 78) — **Won't fix** (intentional casts to access `.collapsed`, `.expand`, `.parent` etc.)
 
 ### SettingsTab.ts
-- `display` method deprecated since 1.13.0 — should use `getSettingDefinitions` (different API shape, deferred)
-- `async display()` returns Promise where void expected
-- Unsafe `.message` access on caught error
+- [ ] Unhandled promises (lines 76, 108) — `void` prefix
+- [ ] `async display()` returns Promise where void expected
+- [ ] Unsafe `.message` on caught error (line 111)
+- [ ] `setWarning` → `setDestructive` (line 71) — **Won't fix** (recommendation only)
+- [ ] `display` → `getSettingDefinitions` — **Deferred** (significant rewrite, different API shape)
+
+### TokenStore.ts
+- [ ] Unsafe `any` (lines 12, 13) — low blast radius, small fix
 
 ---
 
-## Releases recommendations
-- **Missing GitHub artifact attestations** — release assets (`main.js`, `styles.css`) should have cryptographic provenance via GitHub Actions artifact attestations. Requires setting up a GitHub Actions build pipeline. See: https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds
+## Recommended Order for Next Session
 
----
-
-## Behaviour warning
-- **Shell execution via `child_process`** — `OAuthManager.openBrowser()` uses `exec` to open the browser. This is intentional (OAuth flow requires opening a browser). Flagged because it gives the plugin shell access. No fix needed — just be aware reviewers may ask about it.
-
----
-
-## CSS warnings
-- `styles.css:615, 870` — `!important` usage. Both are on `.gcal-event-needs-action` (crosshatch background) and `.fc-timeGridDay-view .fc-day-today`. The `!important` on the crosshatch is required because FullCalendar sets `background` as an inline style — removing it would break the needsAction visual. The today highlight suppression also needs it to override FC defaults.
-
----
-
-## Files to paste at start of next thread
-- `src/main.ts`
-- `src/api/GoogleCalendarAPI.ts`
-- `src/auth/OAuthManager.ts`
-- `src/components/CalendarPanel.tsx`
-- `src/components/EventModal.tsx`
-- `src/settings/SettingsTab.ts`
+1. ~~`fetch` → `requestUrl` (GoogleCalendarAPI.ts + OAuthManager.ts)~~ ✅ DONE
+2. Step C — CalendarPanel.tsx + EventModal.tsx async FC attributes ← START HERE
+3. EventModal.tsx unnecessary assertions
+4. main.ts + SettingsTab.ts unhandled promises
+5. TokenStore.ts unsafe `any`
