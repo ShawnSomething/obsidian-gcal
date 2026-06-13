@@ -68,7 +68,7 @@ export class SettingsTab extends PluginSettingTab {
 					.addButton((btn) =>
 						btn
 							.setButtonText("Remove")
-							.setDestructive()
+							.setWarning()
 							.onClick(async () => {
 								await this.tokenStore.removeAccount(
 									account.accountId,
