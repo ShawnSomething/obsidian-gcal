@@ -1,7 +1,7 @@
 {
   "id": "gcal-sidebar",
   "name": "GCal Sidebar",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "minAppVersion": "1.7.2", 
   "description": "Interactive Google Calendar sidebar with multi-account support.",
   "author": "ShawnSomething",

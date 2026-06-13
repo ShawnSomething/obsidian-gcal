@@ -13,7 +13,8 @@ export class SettingsTab extends PluginSettingTab {
 		this.tokenStore = new TokenStore(plugin);
 	}
 
-	async display(): Promise<void> {
+	display(): void {
+		void(async () => {
 		const { containerEl } = this;
 		containerEl.empty();
 
@@ -73,7 +74,7 @@ export class SettingsTab extends PluginSettingTab {
 								await this.tokenStore.removeAccount(
 									account.accountId,
 								);
-								this.display();
+								void this.display();
 							}),
 					);
 			}
@@ -105,10 +106,10 @@ export class SettingsTab extends PluginSettingTab {
 							await this.tokenStore.saveAccount(account);
 							console.log("Account saved");
 							new Notice(`Connected: ${account.displayName}`);
-							this.display();
-						} catch (err: any) {
+							void this.display();
+						} catch (err) {
 							console.error("Auth error:", err);
-							new Notice(`Auth failed: ${err.message}`);
+							new Notice(`Auth failed: ${(err as Error).message}`);
 						}
 					}),
 			);
@@ -126,5 +127,6 @@ export class SettingsTab extends PluginSettingTab {
 				alt: "Support on Ko-fi",
 			},
 		});
-	}
+	})();
+}
 }

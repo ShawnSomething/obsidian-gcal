@@ -9,7 +9,7 @@ export class TokenStore {
 	}
 
 	async load(): Promise<PluginData> {
-		const data = await this.plugin.loadData();
+		const data = await this.plugin.loadData() as PluginData | null;
 		return data ?? this.defaultData();
 	}
 

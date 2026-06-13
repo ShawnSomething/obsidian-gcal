@@ -29,8 +29,8 @@ export default function MiniMonth({ selectedDate, onDateSelect }: Props) {
         setOpen(false);
       }
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    activeDocument.addEventListener("mousedown", handler);
+    return () => activeDocument.removeEventListener("mousedown", handler);
   }, [open]);
 
   const today = new Date();

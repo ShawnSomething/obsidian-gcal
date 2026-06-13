@@ -24,8 +24,8 @@ export default function ContextMenu({
         const handler = (e: MouseEvent) => {
             if (ref.current && !ref.current.contains(e.target as Node)) onClose();
         };
-        document.addEventListener("mousedown", handler);
-        return () => document.removeEventListener("mousedown", handler);
+        activeDocument.addEventListener("mousedown", handler);
+        return () => activeDocument.removeEventListener("mousedown", handler);
     }, []);
 
     return createPortal(
@@ -70,6 +70,6 @@ export default function ContextMenu({
                 Delete
             </button>
         </div>,
-        document.body
+        activeDocument.body
     );
 }

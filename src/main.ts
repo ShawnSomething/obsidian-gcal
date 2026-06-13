@@ -46,7 +46,7 @@ export default class GCalPlugin extends Plugin {
 		this.addSettingTab(new SettingsTab(this.app, this));
 
 		this.addRibbonIcon("gcal-icon", "GCal Sidebar", () => {
-			this.activateView();
+			void this.activateView();
 		});
 
 		this.addCommand({
@@ -58,7 +58,7 @@ export default class GCalPlugin extends Plugin {
 					this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];
 
 				if (!existing) {
-					this.activateView();
+					void this.activateView();
 					return;
 				}
 
@@ -66,7 +66,7 @@ export default class GCalPlugin extends Plugin {
 
 				if (isCollapsed) {
 					rightSplit.expand();
-					this.app.workspace.revealLeaf(existing);
+					void this.app.workspace.revealLeaf(existing);
 					return;
 				}
 
@@ -77,7 +77,7 @@ export default class GCalPlugin extends Plugin {
 				if (isActive) {
 					rightSplit.collapse();
 				} else {
-					this.app.workspace.revealLeaf(existing);
+					void this.app.workspace.revealLeaf(existing);
 				}
 			},
 		});
@@ -134,7 +134,7 @@ export default class GCalPlugin extends Plugin {
 	async activateView() {
 		const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE);
 		if (existing.length > 0) {
-			this.app.workspace.revealLeaf(existing[0]!);
+			void this.app.workspace.revealLeaf(existing[0]!);
 			return;
 		}
 
@@ -143,7 +143,7 @@ export default class GCalPlugin extends Plugin {
 		await leaf.setViewState({ type: VIEW_TYPE, active: true });
 
 		const newLeaf = this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];
-		if (newLeaf) this.app.workspace.revealLeaf(newLeaf);
+		if (newLeaf) void this.app.workspace.revealLeaf(newLeaf);
 	}
 
 	async reloadCredentials() {

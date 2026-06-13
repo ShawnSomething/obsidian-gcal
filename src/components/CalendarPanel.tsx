@@ -151,7 +151,7 @@ export default function CalendarPanel({ plugin }: Props) {
             account,
             `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calEvent.calendarId)}/events/${calEvent.id}`
           );
-          if (!res.ok) throw new Error("Failed to delete event");
+          if (res.status < 200 || res.status >= 300) throw new Error("Failed to delete event");
           dispatch({ type: "REMOVE_EVENT", payload: calEvent.id });
         } else {
           await plugin.api.deleteRecurringAndFollowing(account, calEvent.calendarId, calEvent);
@@ -162,7 +162,7 @@ export default function CalendarPanel({ plugin }: Props) {
           account,
           `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calEvent.calendarId)}/events/${calEvent.id}`
         );
-        if (!res.ok) throw new Error("Failed to delete event");
+        if (res.status < 200 || res.status >= 300) throw new Error("Failed to delete event");
         dispatch({ type: "REMOVE_EVENT", payload: calEvent.id });
       }
       setEditingEvent(null);
@@ -321,7 +321,7 @@ export default function CalendarPanel({ plugin }: Props) {
       });
     } else {
       // Next window wasn't ready yet — fetch all 3 fresh.
-      fetchAllWindowsRef.current?.(newDate);
+      void fetchAllWindowsRef.current?.(newDate);
     }
   };
 
@@ -336,12 +336,12 @@ export default function CalendarPanel({ plugin }: Props) {
       const id = ++fetchIdRef.current;
       dispatch({ type: "SHIFT_BACK" });
       const { prevDate } = getAdjacentDates(newDate, activeView);
-      fetchWindowRef.current?.(prevDate, activeView).then((events) => {
+      void fetchWindowRef.current?.(prevDate, activeView).then((events) => {
         if (fetchIdRef.current === id) dispatch({ type: "SET_PREV_WINDOW", payload: events });
       });
     } else {
       // Prev window wasn't ready yet — fetch all 3 fresh.
-      fetchAllWindowsRef.current?.(newDate);
+      void fetchAllWindowsRef.current?.(newDate);
     }
   };
 
@@ -376,12 +376,12 @@ export default function CalendarPanel({ plugin }: Props) {
   // View change — fetch all 3 windows fresh. Date navigation is handled at call sites.
   useEffect(() => {
     if (!hasFetchedInitial.current) return;
-    fetchAllWindowsRef.current?.(state.selectedDate);
+    void fetchAllWindowsRef.current?.(state.selectedDate);
   }, [activeView]);
 
   // 5-minute poll — full refresh (calendar list + all 3 windows).
   useEffect(() => {
-    const interval = window.setInterval(() => runFullRefreshRef.current?.(), 5 * 60 * 1000);
+    const interval = window.setInterval(() => void runFullRefreshRef.current?.(), 5 * 60 * 1000);
     return () => window.clearInterval(interval);
   }, []);
 
@@ -445,9 +445,9 @@ export default function CalendarPanel({ plugin }: Props) {
         const today = new Date();
         dispatch({ type: "SET_DATE", payload: today });
         calendarRef.current?.getApi().today();
-        fetchAllWindowsRef.current?.(today);
+        void fetchAllWindowsRef.current?.(today);
       },
-      refresh: () => { runFullRefreshRef.current?.(); },
+      refresh: () => { void runFullRefreshRef.current?.(); },
       next: () => navigateNextRef.current?.(),
       prev: () => navigatePrevRef.current?.(),
       duplicate: () => duplicateRef.current?.(),
@@ -500,7 +500,7 @@ export default function CalendarPanel({ plugin }: Props) {
         if (shouldAdvance) {
           dispatch({ type: "SET_DATE", payload: newToday });
           calendarRef.current?.getApi().today();
-          fetchAllWindowsRef.current?.(newToday);
+          void fetchAllWindowsRef.current?.(newToday);
         }
         schedule();
       }, midnight.getTime() - now.getTime());
@@ -526,26 +526,26 @@ export default function CalendarPanel({ plugin }: Props) {
       if (state.windowEvents.next.length > 0) {
         dispatch({ type: "SHIFT_FORWARD" });
         const { nextDate: newNextDate } = getAdjacentDates(date, activeView);
-        fetchWindowRef.current?.(newNextDate, activeView).then((events) => {
+        void fetchWindowRef.current?.(newNextDate, activeView).then((events) => {
           dispatch({ type: "SET_NEXT_WINDOW", payload: events });
         });
       } else {
-        fetchAllWindowsRef.current?.(date);
+        void fetchAllWindowsRef.current?.(date);
       }
     } else if (targetWindowStart.getTime() === prevDate.getTime()) {
       // One step back.
       if (state.windowEvents.prev.length > 0) {
         dispatch({ type: "SHIFT_BACK" });
         const { prevDate: newPrevDate } = getAdjacentDates(date, activeView);
-        fetchWindowRef.current?.(newPrevDate, activeView).then((events) => {
+        void fetchWindowRef.current?.(newPrevDate, activeView).then((events) => {
           dispatch({ type: "SET_PREV_WINDOW", payload: events });
         });
       } else {
-        fetchAllWindowsRef.current?.(date);
+        void fetchAllWindowsRef.current?.(date);
       }
     } else {
       // Arbitrary jump — fetch all 3 fresh.
-      fetchAllWindowsRef.current?.(date);
+      void fetchAllWindowsRef.current?.(date);
     }
   };
 
@@ -585,7 +585,7 @@ export default function CalendarPanel({ plugin }: Props) {
               const today = new Date();
               dispatch({ type: "SET_DATE", payload: today });
               calendarRef.current?.getApi().today();
-              fetchAllWindowsRef.current?.(today);
+              void fetchAllWindowsRef.current?.(today);
             }}
             className="gcal-panel-btn-icon"
             title="Go to today"
@@ -694,7 +694,7 @@ export default function CalendarPanel({ plugin }: Props) {
               ? ["gcal-event-needs-action"]
               : [];
           }}
-          eventDrop={async (info) => {
+          eventDrop={(info) => { void (async () => {
             const calEvent = info.event.extendedProps.calEvent as CalEvent;
             const account = plugin.data.accounts.find(
               (a) => a.accountId === calEvent.accountId
@@ -768,9 +768,10 @@ export default function CalendarPanel({ plugin }: Props) {
               info.revert();
               showToast(`Failed to move event: ${(err as Error).message}`, "error");
             }
+          })();
           }}
 
-          eventResize={async (info) => {
+          eventResize={(info) => { void (async () => {
             const calEvent = info.event.extendedProps.calEvent as CalEvent;
             const account = plugin.data.accounts.find(
               (a) => a.accountId === calEvent.accountId
@@ -844,9 +845,10 @@ export default function CalendarPanel({ plugin }: Props) {
               info.revert();
               showToast(`Failed to resize event: ${(err as Error).message}`, "error");
             }
+          })();
           }}
 
-          eventClick={async (info) => {
+          eventClick={(info) => { void (async () => {
             const calEvent = info.event.extendedProps.calEvent as CalEvent;
             if (calEvent.recurringEventId) {
               const account = plugin.data.accounts.find(a => a.accountId === calEvent.accountId);
@@ -864,6 +866,7 @@ export default function CalendarPanel({ plugin }: Props) {
               }
             }
             setEditingEvent(calEvent);
+          })();
           }}
 
           select={(info) => {
@@ -942,19 +945,19 @@ export default function CalendarPanel({ plugin }: Props) {
           }}
           onSplitSeries={async (updates) => {
             const account = plugin.data.accounts.find(
-              (a) => a.accountId === editingEvent!.accountId
+              (a) => a.accountId === editingEvent.accountId
             );
             if (!account) return;
             showToast("Splitting series...", "loading");
             try {
               await plugin.api.splitRecurringSeries(
                 account,
-                editingEvent!.calendarId,
-                editingEvent!,
+                editingEvent.calendarId,
+                editingEvent,
                 updates
               );
               setEditingEvent(null);
-              await fetchCalendarRef.current?.(editingEvent!.calendarId, editingEvent!.accountId);
+              await fetchCalendarRef.current?.(editingEvent.calendarId, editingEvent!.accountId);
               showToast("Series split", "success", 2000);
             } catch (err) {
               showToast(`Failed to split series: ${(err as Error).message}`, "error");
@@ -977,7 +980,7 @@ export default function CalendarPanel({ plugin }: Props) {
                     account,
                     `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(editingEvent.calendarId)}/events/${editingEvent.id}`
                   );
-                  if (!res.ok) throw new Error("Failed to delete event");
+                  if (res.status < 200 || res.status >= 300) throw new Error("Failed to delete event");
                   dispatch({ type: "REMOVE_EVENT", payload: editingEvent.id });
                 } else {
                   await plugin.api.deleteRecurringAndFollowing(
@@ -992,7 +995,7 @@ export default function CalendarPanel({ plugin }: Props) {
                   account,
                   `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(editingEvent.calendarId)}/events/${editingEvent.id}`
                 );
-                if (!res.ok) throw new Error("Failed to delete event");
+                if (res.status < 200 || res.status >= 300) throw new Error("Failed to delete event");
                 dispatch({ type: "REMOVE_EVENT", payload: editingEvent.id });
               }
               setEditingEvent(null);
@@ -1053,7 +1056,7 @@ export default function CalendarPanel({ plugin }: Props) {
           onClose={() => setContextMenu(null)}
           onJoinMeeting={
             contextMenu.calEvent.hangoutLink
-              ? () => window.open(contextMenu.calEvent.hangoutLink!, "_blank")
+              ? () => window.open(contextMenu.calEvent.hangoutLink, "_blank")
               : undefined
           }
           onDuplicate={() => handleDuplicate(contextMenu.calEvent)}

@@ -1,6 +1,8 @@
 import * as http from "http";
 import * as crypto from "crypto";
 import { AccountConfig } from "../api/types";
+import { exec } from "child_process";
+import { requestUrl } from "obsidian";
 
 const REDIRECT_PORT_START = 42813;
 const REDIRECT_PORT_END = 42817;
@@ -100,7 +102,8 @@ export class OAuthManager {
 		codeVerifier: string,
 		redirectUri: string
 	): Promise<{ access_token: string; refresh_token: string; expires_in: number }> {
-		const response = await fetch(GOOGLE_TOKEN_URL, {
+		const response = await requestUrl({
+			url: GOOGLE_TOKEN_URL,
 			method: "POST",
 			headers: { "Content-Type": "application/x-www-form-urlencoded" },
 			body: new URLSearchParams({
@@ -110,28 +113,28 @@ export class OAuthManager {
 				redirect_uri: redirectUri,
 				grant_type: "authorization_code",
 				code_verifier: codeVerifier,
-			}),
+			}).toString(),
 		});
 
-		if (!response.ok) {
-			throw new Error(`Token exchange failed: ${response.statusText}`);
+		if (response.status < 200 || response.status >= 300) {
+			throw new Error(`Token exchange failed: ${response.status}`);
 		}
-		const tokens = await response.json();
+		const tokens = response.json;
 		console.log("Token exchange response:", tokens);
 		return tokens;
 	}
 
 	private async fetchAccountInfo(accessToken: string): Promise<{ email: string }> {
-		const response = await fetch(
-			"https://www.googleapis.com/oauth2/v3/userinfo",
-			{ headers: { Authorization: `Bearer ${accessToken}` } }
-		);
+		const response = await requestUrl({
+			url: "https://www.googleapis.com/oauth2/v3/userinfo",
+			headers: { Authorization: `Bearer ${accessToken}` },
+		});
 
-		if (!response.ok) {
+		if (response.status < 200 || response.status >= 300) {
 			throw new Error("Failed to fetch account info");
 		}
 
-		return response.json();
+		return response.json;
 	}
 
 	private async findAvailablePort(): Promise<number> {
@@ -153,7 +156,6 @@ export class OAuthManager {
 	}
 
 	private openBrowser(url: string): void {
-		const { exec } = require("child_process");
 		exec(`open "${url}"`);
 	}
 

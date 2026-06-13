@@ -13,8 +13,8 @@ export default function CalendarToggle() {
                 setOpen(false);
             }
         }
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
+        activeDocument.addEventListener("mousedown", handleClickOutside);
+        return () => activeDocument.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
     // Group calendars by accountId
