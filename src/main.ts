@@ -131,10 +131,6 @@ export default class GCalPlugin extends Plugin {
 		});
 	}
 
-	onunload() {
-		this.app.workspace.detachLeavesOfType(VIEW_TYPE);
-	}
-
 	async activateView() {
 		const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE);
 		if (existing.length > 0) {

@@ -119,21 +119,7 @@ export default function CalendarToggle() {
                                 <div
                                     key={cal.id}
                                     onClick={() => dispatch({ type: "TOGGLE_CALENDAR", payload: cal.id })}
-                                    style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: "10px",
-                                        padding: "5px 12px",
-                                        cursor: "pointer",
-                                        color: "var(--text-normal)",
-                                        fontSize: "13px",
-                                    }}
-                                    onMouseEnter={(e) =>
-                                        (e.currentTarget.style.background = "var(--background-secondary)")
-                                    }
-                                    onMouseLeave={(e) =>
-                                        (e.currentTarget.style.background = "transparent")
-                                    }
+                                    className="gcal-calendar-item"
                                 >
                                     <span style={{
                                         width: "12px",

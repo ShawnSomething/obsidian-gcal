@@ -17,10 +17,12 @@ export class SettingsTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl("h2", { text: "GCal Sidebar" });
+		new Setting(containerEl).setName("GCal Sidebar").setHeading();
 
 		// --- Client Credentials ---
-		containerEl.createEl("h3", { text: "Google Cloud Credentials" });
+		new Setting(containerEl)
+			.setName("Google Cloud Credentials")
+			.setHeading();
 
 		const data = await this.tokenStore.load();
 
@@ -53,7 +55,7 @@ export class SettingsTab extends PluginSettingTab {
 		);
 
 		// --- Accounts ---
-		containerEl.createEl("h3", { text: "Connected Accounts" });
+		new Setting(containerEl).setName("Connected Accounts").setHeading();
 
 		if (data.accounts.length === 0) {
 			containerEl.createEl("p", {
@@ -68,7 +70,7 @@ export class SettingsTab extends PluginSettingTab {
 					.addButton((btn) =>
 						btn
 							.setButtonText("Remove")
-							.setWarning()
+							.setDestructive()
 							.onClick(async () => {
 								await this.tokenStore.removeAccount(
 									account.accountId,
@@ -113,10 +115,18 @@ export class SettingsTab extends PluginSettingTab {
 					}),
 			);
 
-		containerEl.createEl("div", { cls: "gcal-settings-kofi" }).innerHTML = `
-  <a href="https://ko-fi.com/shawnsomething" target="_blank">
-    <img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support on Ko-fi" />
-  </a>
-`;
+		const kofiDiv = containerEl.createEl("div", {
+			cls: "gcal-settings-kofi",
+		});
+		const kofiLink = kofiDiv.createEl("a", {
+			href: "https://ko-fi.com/shawnsomething",
+		});
+		kofiLink.setAttr("target", "_blank");
+		kofiLink.createEl("img", {
+			attr: {
+				src: "https://ko-fi.com/img/githubbutton_sm.svg",
+				alt: "Support on Ko-fi",
+			},
+		});
 	}
 }

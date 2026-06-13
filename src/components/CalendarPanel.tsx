@@ -3,7 +3,7 @@ import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
-import GCalPlugin, { CommandBridge } from "../main";
+import GCalPlugin from "../main";
 import { useCalendar, CalEvent, CalendarMeta } from "../context/CalendarContext";
 import { deduplicateEvents } from "../utils/dedup";
 import CalendarToggle from "./CalendarToggle";
@@ -85,7 +85,7 @@ export default function CalendarPanel({ plugin }: Props) {
   );
 
   const [toast, setToast] = useState<{ message: string; type: "loading" | "success" | "error" } | null>(null);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
 
   const [activeView, setActiveView] = useState<"day" | "3day" | "week">(
     plugin.data.activeView ?? "week"
@@ -96,10 +96,10 @@ export default function CalendarPanel({ plugin }: Props) {
   const viewPopoverRef = useRef<HTMLDivElement>(null);
 
   const showToast = (message: string, type: "loading" | "success" | "error", autoDismissMs?: number) => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     setToast({ message, type });
     if (autoDismissMs) {
-      toastTimerRef.current = setTimeout(() => setToast(null), autoDismissMs);
+      toastTimerRef.current = window.setTimeout(() => setToast(null), autoDismissMs);
     }
   };
 
@@ -381,8 +381,8 @@ export default function CalendarPanel({ plugin }: Props) {
 
   // 5-minute poll — full refresh (calendar list + all 3 windows).
   useEffect(() => {
-    const interval = setInterval(() => runFullRefreshRef.current?.(), 5 * 60 * 1000);
-    return () => clearInterval(interval);
+    const interval = window.setInterval(() => runFullRefreshRef.current?.(), 5 * 60 * 1000);
+    return () => window.clearInterval(interval);
   }, []);
 
   // Persist calendar visibility on every calendars change.
@@ -399,7 +399,7 @@ export default function CalendarPanel({ plugin }: Props) {
     const el = calendarWrapperRef.current;
     if (!el) return;
     const observer = new ResizeObserver(() => {
-      setTimeout(() => {
+      window.setTimeout(() => {
         calendarRef.current?.getApi().updateSize();
       }, 50);
     });
@@ -479,17 +479,17 @@ export default function CalendarPanel({ plugin }: Props) {
         setViewPopoverOpen(false);
       }
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    activeDocument.addEventListener("mousedown", handler);
+    return () => activeDocument.removeEventListener("mousedown", handler);
   }, [viewPopoverOpen]);
 
   useEffect(() => {
-    let timerId: ReturnType<typeof setTimeout>;
+    let timerId: number;
     const schedule = () => {
       const now = new Date();
       const midnight = new Date(now);
       midnight.setHours(24, 0, 0, 0);
-      timerId = setTimeout(() => {
+      timerId = window.setTimeout(() => {
         const newToday = new Date();
         const newTodayStart = new Date(newToday);
         newTodayStart.setHours(0, 0, 0, 0);
@@ -506,7 +506,7 @@ export default function CalendarPanel({ plugin }: Props) {
       }, midnight.getTime() - now.getTime());
     };
     schedule();
-    return () => clearTimeout(timerId);
+    return () => window.clearTimeout(timerId);
   }, []);
 
   // ─── MiniMonth date selection ─────────────────────────────────────────────
