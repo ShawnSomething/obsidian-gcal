@@ -14,6 +14,7 @@ import { ViewDensity } from "../api/types";
 import { desaturateHex } from "../utils/color";
 import MiniMonth from "./MiniMonth";
 import ContextMenu from "./ContextMenu";
+import { ConfirmModal } from "./ConfirmModal";
 
 interface Props {
   plugin: GCalPlugin;
@@ -137,39 +138,40 @@ export default function CalendarPanel({ plugin }: Props) {
       });
   };
 
-  const handleDelete = async (calEvent: CalEvent) => {
-    if (!window.confirm(`Delete "${calEvent.title}"?`)) return;
-    const account = plugin.data.accounts.find((a) => a.accountId === calEvent.accountId);
-    if (!account) return;
-    showToast("Deleting...", "loading");
-    try {
-      if (calEvent.recurringEventId) {
-        const choice = await askRecurring(calEvent);
-        if (!choice) { setToast(null); return; }
-        if (choice === "this") {
+  const handleDelete = (calEvent: CalEvent) => {
+    new ConfirmModal(plugin.app, `Delete "${calEvent.title}"?`, async () => {
+      const account = plugin.data.accounts.find((a) => a.accountId === calEvent.accountId);
+      if (!account) return;
+      showToast("Deleting...", "loading");
+      try {
+        if (calEvent.recurringEventId) {
+          const choice = await askRecurring(calEvent);
+          if (!choice) { setToast(null); return; }
+          if (choice === "this") {
+            const res = await plugin.api.deleteWithAuth(
+              account,
+              `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calEvent.calendarId)}/events/${calEvent.id}`
+            );
+            if (res.status < 200 || res.status >= 300) throw new Error("Failed to delete event");
+            dispatch({ type: "REMOVE_EVENT", payload: calEvent.id });
+          } else {
+            await plugin.api.deleteRecurringAndFollowing(account, calEvent.calendarId, calEvent);
+            await fetchCalendarRef.current?.(calEvent.calendarId, calEvent.accountId);
+          }
+        } else {
           const res = await plugin.api.deleteWithAuth(
             account,
             `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calEvent.calendarId)}/events/${calEvent.id}`
           );
           if (res.status < 200 || res.status >= 300) throw new Error("Failed to delete event");
           dispatch({ type: "REMOVE_EVENT", payload: calEvent.id });
-        } else {
-          await plugin.api.deleteRecurringAndFollowing(account, calEvent.calendarId, calEvent);
-          await fetchCalendarRef.current?.(calEvent.calendarId, calEvent.accountId);
         }
-      } else {
-        const res = await plugin.api.deleteWithAuth(
-          account,
-          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calEvent.calendarId)}/events/${calEvent.id}`
-        );
-        if (res.status < 200 || res.status >= 300) throw new Error("Failed to delete event");
-        dispatch({ type: "REMOVE_EVENT", payload: calEvent.id });
+        setEditingEvent(null);
+        showToast("Event deleted", "success", 2000);
+      } catch (err) {
+        showToast(`Failed to delete event: ${(err as Error).message}`, "error");
       }
-      setEditingEvent(null);
-      showToast("Event deleted", "success", 2000);
-    } catch (err) {
-      showToast(`Failed to delete event: ${(err as Error).message}`, "error");
-    }
+    }).open();
   };
 
   const handleRespond = async (calEvent: CalEvent, status: "accepted" | "declined" | "tentative") => {
@@ -283,6 +285,25 @@ export default function CalendarPanel({ plugin }: Props) {
   };
 
   runFullRefreshRef.current = async () => {
+
+    const today = new Date();
+    const todayStart = new Date(today);
+    todayStart.setHours(0, 0, 0, 0);
+    const selectedStart = new Date(state.selectedDate);
+    selectedStart.setHours(0, 0, 0, 0);
+
+    let dateToFetch = state.selectedDate;
+    if (todayStart.getTime() > selectedStart.getTime()) {
+      const shouldAdvance = activeView === "week"
+        ? todayStart.getTime() >= getViewWindow(state.selectedDate, activeView).timeMax.getTime()
+        : true;
+      if (shouldAdvance) {
+        dateToFetch = today;
+        dispatch({ type: "SET_DATE", payload: today });
+        calendarRef.current?.getApi().today();
+      }
+    }
+
     showToast("Loading calendars...", "loading");
     dispatch({ type: "SET_LOADING", payload: true });
     dispatch({ type: "SET_ERROR", payload: null });
@@ -970,8 +991,7 @@ export default function CalendarPanel({ plugin }: Props) {
           }}
 
           onDelete={() => {
-            void (async () => {
-              if (!window.confirm(`Delete "${editingEvent.title}"?`)) return;
+            new ConfirmModal(plugin.app, `Delete "${editingEvent.title}"?`, async () => {
               const account = plugin.data.accounts.find(
                 (a) => a.accountId === editingEvent.accountId
               );
@@ -1009,7 +1029,7 @@ export default function CalendarPanel({ plugin }: Props) {
               } catch (err) {
                 showToast(`Failed to delete event: ${(err as Error).message}`, "error");
               }
-            })();
+            }, "Delete").open();
           }}
         />
       )}

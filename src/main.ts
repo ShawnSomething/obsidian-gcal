@@ -14,6 +14,21 @@ export interface CommandBridge {
 	duplicate: () => void;
 }
 
+interface ObsidianSplitInternal {
+  collapsed: boolean;
+  expand(): void;
+  collapse(): void;
+}
+
+interface ObsidianLeafParent {
+  children: WorkspaceLeaf[];
+  currentTab: number;
+}
+
+interface ObsidianLeafInternal {
+  parent: ObsidianLeafParent | null;
+}
+
 export default class GCalPlugin extends Plugin {
 	tokenStore!: TokenStore;
 	api!: GoogleCalendarAPI;
@@ -53,7 +68,7 @@ export default class GCalPlugin extends Plugin {
 			id: "open-gcal-view",
 			name: "Open Google Calendar",
 			callback: () => {
-				const rightSplit = this.app.workspace.rightSplit as any;
+				const rightSplit = this.app.workspace.rightSplit as unknown as ObsidianSplitInternal;
 				const existing =
 					this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];
 
@@ -70,7 +85,7 @@ export default class GCalPlugin extends Plugin {
 					return;
 				}
 
-				const parent = (existing as any).parent;
+				const parent = (existing as unknown as ObsidianLeafInternal).parent;
 				const isActive =
 					parent?.children?.[parent?.currentTab] === existing;
 
