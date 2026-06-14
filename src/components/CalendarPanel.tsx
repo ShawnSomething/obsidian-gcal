@@ -285,25 +285,6 @@ export default function CalendarPanel({ plugin }: Props) {
   };
 
   runFullRefreshRef.current = async () => {
-
-    const today = new Date();
-    const todayStart = new Date(today);
-    todayStart.setHours(0, 0, 0, 0);
-    const selectedStart = new Date(state.selectedDate);
-    selectedStart.setHours(0, 0, 0, 0);
-
-    let dateToFetch = state.selectedDate;
-    if (todayStart.getTime() > selectedStart.getTime()) {
-      const shouldAdvance = activeView === "week"
-        ? todayStart.getTime() >= getViewWindow(state.selectedDate, activeView).timeMax.getTime()
-        : true;
-      if (shouldAdvance) {
-        dateToFetch = today;
-        dispatch({ type: "SET_DATE", payload: today });
-        calendarRef.current?.getApi().today();
-      }
-    }
-
     showToast("Loading calendars...", "loading");
     dispatch({ type: "SET_LOADING", payload: true });
     dispatch({ type: "SET_ERROR", payload: null });
@@ -492,6 +473,29 @@ export default function CalendarPanel({ plugin }: Props) {
     activeViewRef.current = activeView;
   }, [activeView]);
 
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState !== "visible") return;
+      const today = new Date();
+      const todayStart = new Date(today);
+      todayStart.setHours(0, 0, 0, 0);
+      const selectedStart = new Date(selectedDateRef.current);
+      selectedStart.setHours(0, 0, 0, 0);
+      if (todayStart.getTime() <= selectedStart.getTime()) return;
+      const view = activeViewRef.current;
+      const shouldAdvance = view === "week"
+        ? todayStart.getTime() >= getViewWindow(selectedDateRef.current, view).timeMax.getTime()
+        : true;
+      if (shouldAdvance) {
+        dispatch({ type: "SET_DATE", payload: today });
+        calendarRef.current?.getApi().today();
+        void fetchAllWindowsRef.current?.(today);
+      }
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, []);
+
   // Close view popover on outside click.
   useEffect(() => {
     if (!viewPopoverOpen) return;
@@ -503,32 +507,6 @@ export default function CalendarPanel({ plugin }: Props) {
     activeDocument.addEventListener("mousedown", handler);
     return () => activeDocument.removeEventListener("mousedown", handler);
   }, [viewPopoverOpen]);
-
-  useEffect(() => {
-    let timerId: number;
-    const schedule = () => {
-      const now = new Date();
-      const midnight = new Date(now);
-      midnight.setHours(24, 0, 0, 0);
-      timerId = window.setTimeout(() => {
-        const newToday = new Date();
-        const newTodayStart = new Date(newToday);
-        newTodayStart.setHours(0, 0, 0, 0);
-        const view = activeViewRef.current;
-        const shouldAdvance = view === "week"
-          ? newTodayStart.getTime() >= getViewWindow(selectedDateRef.current, view).timeMax.getTime()
-          : true;
-        if (shouldAdvance) {
-          dispatch({ type: "SET_DATE", payload: newToday });
-          calendarRef.current?.getApi().today();
-          void fetchAllWindowsRef.current?.(newToday);
-        }
-        schedule();
-      }, midnight.getTime() - now.getTime());
-    };
-    schedule();
-    return () => window.clearTimeout(timerId);
-  }, []);
 
   // ─── MiniMonth date selection ─────────────────────────────────────────────
 
