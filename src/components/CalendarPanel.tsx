@@ -136,7 +136,7 @@ export default function CalendarPanel({ plugin }: Props) {
         attendees: calEvent.attendees.length
           ? calEvent.attendees.map((a) => ({ email: a.email }))
           : undefined,
-      })
+      }, "none")
       .then((created) => {
         dispatch({ type: "ADD_EVENT", payload: created });
         showToast("Event duplicated", "success", 2000);

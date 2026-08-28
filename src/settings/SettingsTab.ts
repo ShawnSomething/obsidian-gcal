@@ -126,7 +126,7 @@ export class SettingsTab extends PluginSettingTab {
 			new Setting(containerEl)
 				.setName("Duplicate on drag")
 				.setDesc(
-					"Hold this key while dragging an event to create a copy instead of miving it.",
+					"Hold this key while dragging an event to create a copy instead of moving it.",
 				)
 				.addDropdown((dd) =>
 					dd
