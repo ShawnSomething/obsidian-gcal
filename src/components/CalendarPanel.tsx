@@ -10,7 +10,7 @@ import CalendarToggle from "./CalendarToggle";
 import EventModal from "./EventModal";
 import { RecurringModal } from "./RecurringModal";
 import enAU from "@fullcalendar/core/locales/en-au";
-import { ViewDensity } from "../api/types";
+import { ViewDensity, DuplicateModifier } from "../api/types";
 import { desaturateHex } from "../utils/color";
 import MiniMonth from "./MiniMonth";
 import ContextMenu from "./ContextMenu";
@@ -25,6 +25,14 @@ const VIEW_MAP = {
   "3day": "threeDays",
   week: "timeGridWeek",
 } as const;
+
+const MODIFIER_KEY: Record<Exclude<DuplicateModifier, "off">,
+"metaKey" | "ctrlKey" | "altKey" | "shiftKey"> = {
+  meta: "metaKey",
+  ctrl: "ctrlKey",
+  alt: "altKey",
+  shift: "shiftKey",
+}
 
 function getViewWindow(date: Date, view: "day" | "3day" | "week"): { timeMin: Date; timeMax: Date } {
   const start = new Date(date);
@@ -113,15 +121,15 @@ export default function CalendarPanel({ plugin }: Props) {
     });
   };
 
-  const handleDuplicate = (calEvent: CalEvent) => {
+  const handleDuplicate = (calEvent: CalEvent, overrides?: { start: string; end: string }) => {
     const account = plugin.data.accounts.find((a) => a.accountId === calEvent.accountId);
     if (!account) return;
     showToast("Duplicating...", "loading");
     plugin.api
       .postEvent(account, calEvent.calendarId, {
         title: calEvent.title,
-        start: calEvent.start,
-        end: calEvent.end,
+        start: overrides?.start ?? calEvent.start,
+        end: overrides?.end ?? calEvent.end,
         allDay: calEvent.allDay,
         location: calEvent.location,
         description: calEvent.description,
@@ -694,8 +702,17 @@ export default function CalendarPanel({ plugin }: Props) {
               : [];
           }}
           eventDrop={(info) => {
+            const calEvent = info.event.extendedProps.calEvent as CalEvent;
+            const mod = plugin.data.duplicateModifier ?? "meta";
+            if (mod !== "off" && info.jsEvent[MODIFIER_KEY[mod]]) {
+              info.revert()
+              handleDuplicate(calEvent, {
+                start: info.event.startStr,
+                end: info.event.endStr,
+              })
+              return
+            }
             void (async () => {
-              const calEvent = info.event.extendedProps.calEvent as CalEvent;
               const account = plugin.data.accounts.find(
                 (a) => a.accountId === calEvent.accountId
               );

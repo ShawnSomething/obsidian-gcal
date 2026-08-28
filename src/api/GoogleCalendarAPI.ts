@@ -180,8 +180,9 @@ export class GoogleCalendarAPI {
 			description?: string;
 			attendees?: { email: string }[];
 		},
+		sendUpdates: "all" | "none" = "all"
 	): Promise<CalEvent> {
-		const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?sendUpdates=all`;
+		const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?{sendUpdates}`;
 
 		const startField = event.allDay
 			? { date: event.start }

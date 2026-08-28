@@ -66,6 +66,7 @@ export class TokenStore {
 			clientSecret: "",
 			viewDensity: "compact",
 			activeView: "week",
+			duplicateModifier: "meta"
 		};
 	}
 }

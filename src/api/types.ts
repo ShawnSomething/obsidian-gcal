@@ -13,6 +13,9 @@ export interface PluginData {
 	clientSecret: string;
 	viewDensity: ViewDensity;
 	activeView?: "day" | "3day" | "week";
+	duplicateModifier?: DuplicateModifier
 }
 
 export type ViewDensity = "compact" | "medium" | "large";
+
+export type DuplicateModifier = "off" | "meta" | "ctrl" | "alt" | "shift"
