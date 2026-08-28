@@ -121,7 +121,11 @@ export default function CalendarPanel({ plugin }: Props) {
     });
   };
 
-  const handleDuplicate = (calEvent: CalEvent, overrides?: { start: string; end: string }) => {
+  const handleDuplicate = (
+    calEvent: CalEvent,
+    overrides?: { start: string; end: string },
+    sendUpdates: "all" | "none" = "all"
+  ) => {
     const account = plugin.data.accounts.find((a) => a.accountId === calEvent.accountId);
     if (!account) return;
     showToast("Duplicating...", "loading");
@@ -136,7 +140,7 @@ export default function CalendarPanel({ plugin }: Props) {
         attendees: calEvent.attendees.length
           ? calEvent.attendees.map((a) => ({ email: a.email }))
           : undefined,
-      }, "none")
+      }, sendUpdates)
       .then((created) => {
         dispatch({ type: "ADD_EVENT", payload: created });
         showToast("Event duplicated", "success", 2000);
@@ -709,7 +713,7 @@ export default function CalendarPanel({ plugin }: Props) {
               handleDuplicate(calEvent, {
                 start: info.event.startStr,
                 end: info.event.endStr,
-              })
+              }, "none")
               return
             }
             void (async () => {

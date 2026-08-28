@@ -171,7 +171,7 @@ export class GoogleCalendarAPI {
 		account: AccountConfig,
 		calendarId: string,
 		event: {
-			title: string;
+			title: string
 			start: string;
 			end: string;
 			allDay: boolean;
