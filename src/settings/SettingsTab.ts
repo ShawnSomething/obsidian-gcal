@@ -21,6 +21,13 @@ export class SettingsTab extends PluginSettingTab {
 	// (minAppVersion 1.7.2). Migrating is a full rewrite of this tab plus
 	// dropping every user below 1.13. Revisit if minAppVersion is raised.
 	display(): void {
+		this.renderTab();
+	}
+
+	// Overriding display() is fine; calling it is not, since it is deprecated
+	// from 1.13.0. In-place refreshes after an account is added or removed go
+	// through renderTab() so no code of ours references the deprecated method.
+	private renderTab(): void {
 		void (async () => {
 			const { containerEl } = this;
 			containerEl.empty();
@@ -76,18 +83,17 @@ export class SettingsTab extends PluginSettingTab {
 						.addButton((btn) =>
 							btn
 								.setButtonText("Remove")
-								// setDestructive() is the modern equivalent but needs Obsidian 1.13.0;
-								// manifest minAppVersion is 1.7.2. Purely cosmetic — both render a red
-								// button. Tried and reverted in b776c4d because it forced minAppVersion
-								// up to 1.13.1.
-								// eslint-disable-next-line @typescript-eslint/no-deprecated
-								.setWarning()
+								// setWarning() is deprecated from 1.13.0 and its replacement
+								// setDestructive() needs 1.13.0; minAppVersion is 1.7.2, and
+								// raising it was tried and reverted in b776c4d. Both methods
+								// only add this class, so apply it directly. then() has been
+								// on BaseComponent since 0.9.7.
+								.then((b) => b.buttonEl.addClass("mod-warning"))
 								.onClick(async () => {
 									await this.tokenStore.removeAccount(
 										account.accountId,
 									);
-									// eslint-disable-next-line @typescript-eslint/no-deprecated
-									void this.display();
+									this.renderTab();
 								}),
 						);
 				}
@@ -121,8 +127,7 @@ export class SettingsTab extends PluginSettingTab {
 									await oauth.authorizeNewAccount();
 								await this.tokenStore.saveAccount(account);
 								new Notice(`Connected: ${account.displayName}`);
-								// eslint-disable-next-line @typescript-eslint/no-deprecated
-								void this.display();
+								this.renderTab();
 							} catch (err) {
 								console.error("Auth error:", err);
 								new Notice(
