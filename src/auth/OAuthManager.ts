@@ -120,7 +120,6 @@ export class OAuthManager {
 			throw new Error(`Token exchange failed: ${response.status}`);
 		}
 		const tokens = response.json as { access_token: string; refresh_token: string; expires_in: number };
-		console.log("Token exchange response:", tokens);
 		return tokens;
 	}
 

@@ -66,7 +66,7 @@ export default class GCalPlugin extends Plugin {
 
 		this.addCommand({
 			id: "open-gcal-view",
-			name: "Open Google Calendar",
+			name: "Open calendar",
 			callback: () => {
 				const rightSplit = this.app.workspace.rightSplit as unknown as ObsidianSplitInternal;
 				const existing =
@@ -99,49 +99,49 @@ export default class GCalPlugin extends Plugin {
 
 		this.addCommand({
 			id: "gcal-view-day",
-			name: "Google Calendar: Day view",
+			name: "Day view",
 			callback: () => this.commandBridge?.setView("day"),
 		});
 
 		this.addCommand({
 			id: "gcal-view-3day",
-			name: "Google Calendar: 3-day view",
+			name: "3-day view",
 			callback: () => this.commandBridge?.setView("3day"),
 		});
 
 		this.addCommand({
 			id: "gcal-view-week",
-			name: "Google Calendar: Week view",
+			name: "Week view",
 			callback: () => this.commandBridge?.setView("week"),
 		});
 
 		this.addCommand({
 			id: "gcal-today",
-			name: "Google Calendar: Go to today",
+			name: "Go to today",
 			callback: () => this.commandBridge?.goToToday(),
 		});
 
 		this.addCommand({
 			id: "gcal-refresh",
-			name: "Google Calendar: Refresh",
+			name: "Refresh",
 			callback: () => this.commandBridge?.refresh(),
 		});
 
 		this.addCommand({
 			id: "gcal-next",
-			name: "Google Calendar: Next",
+			name: "Next",
 			callback: () => this.commandBridge?.next(),
 		});
 
 		this.addCommand({
 			id: "gcal-prev",
-			name: "Google Calendar: Previous",
+			name: "Previous",
 			callback: () => this.commandBridge?.prev(),
 		});
 		
 		this.addCommand({
 			id: "gcal-duplicate-event",
-			name: "Google Calendar: Duplicate event",
+			name: "Duplicate event",
 			callback: () => this.commandBridge?.duplicate(),
 		});
 	}

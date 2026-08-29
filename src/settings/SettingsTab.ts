@@ -14,6 +14,12 @@ export class SettingsTab extends PluginSettingTab {
 		this.tokenStore = new TokenStore(plugin);
 	}
 
+	// display() is deprecated since Obsidian 1.13.0 in favour of the
+	// declarative getSettingDefinitions() API. Obsidian's own types say it is
+	// "only implemented as a fallback for plugins that need to support
+	// Obsidian versions older than 1.13.0" — exactly this plugin
+	// (minAppVersion 1.7.2). Migrating is a full rewrite of this tab plus
+	// dropping every user below 1.13. Revisit if minAppVersion is raised.
 	display(): void {
 		void (async () => {
 			const { containerEl } = this;
@@ -21,7 +27,7 @@ export class SettingsTab extends PluginSettingTab {
 
 			// --- Client Credentials ---
 			new Setting(containerEl)
-				.setName("Google Cloud Credentials")
+				.setName("Google Cloud credentials")
 				.setHeading();
 
 			const data = await this.tokenStore.load();
@@ -40,7 +46,7 @@ export class SettingsTab extends PluginSettingTab {
 					}),
 			);
 
-			new Setting(containerEl).setName("Client Secret").addText((text) =>
+			new Setting(containerEl).setName("Client secret").addText((text) =>
 				text
 					.setPlaceholder("GOCSPX-...")
 					.setValue(data.clientSecret)
@@ -55,7 +61,7 @@ export class SettingsTab extends PluginSettingTab {
 			);
 
 			// --- Accounts ---
-			new Setting(containerEl).setName("Connected Accounts").setHeading();
+			new Setting(containerEl).setName("Connected accounts").setHeading();
 
 			if (data.accounts.length === 0) {
 				containerEl.createEl("p", {
@@ -70,11 +76,17 @@ export class SettingsTab extends PluginSettingTab {
 						.addButton((btn) =>
 							btn
 								.setButtonText("Remove")
+								// setDestructive() is the modern equivalent but needs Obsidian 1.13.0;
+								// manifest minAppVersion is 1.7.2. Purely cosmetic — both render a red
+								// button. Tried and reverted in b776c4d because it forced minAppVersion
+								// up to 1.13.1.
+								// eslint-disable-next-line @typescript-eslint/no-deprecated
 								.setWarning()
 								.onClick(async () => {
 									await this.tokenStore.removeAccount(
 										account.accountId,
 									);
+									// eslint-disable-next-line @typescript-eslint/no-deprecated
 									void this.display();
 								}),
 						);
@@ -82,7 +94,7 @@ export class SettingsTab extends PluginSettingTab {
 			}
 
 			new Setting(containerEl)
-				.setName("Add Google Account")
+				.setName("Add Google account")
 				.setDesc("Opens a browser window to authorise with Google")
 				.addButton((btn) =>
 					btn
@@ -95,7 +107,7 @@ export class SettingsTab extends PluginSettingTab {
 								!freshData.clientSecret
 							) {
 								new Notice(
-									"Enter your Client ID and Secret first.",
+									"Enter your client ID and secret first.",
 								);
 								return;
 							}
@@ -107,10 +119,9 @@ export class SettingsTab extends PluginSettingTab {
 								);
 								const account =
 									await oauth.authorizeNewAccount();
-								console.log("Account returned:", account);
 								await this.tokenStore.saveAccount(account);
-								console.log("Account saved");
 								new Notice(`Connected: ${account.displayName}`);
+								// eslint-disable-next-line @typescript-eslint/no-deprecated
 								void this.display();
 							} catch (err) {
 								console.error("Auth error:", err);
