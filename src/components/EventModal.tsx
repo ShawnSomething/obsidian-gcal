@@ -1,6 +1,13 @@
 import { useState } from "react";
 import { CalEvent, useCalendar } from "../context/CalendarContext";
-import { RRuleFrequency, RRuleDay, buildRRule } from "../utils/rrule";
+import {
+  RRuleFrequency,
+  RRuleDay,
+  buildRRule,
+  parseRRule,
+  getStartDay,
+} from "../utils/rrule";
+import { toLocalInput } from "../utils/datetime";
 
 type EditProps = {
   mode: "edit";
@@ -24,38 +31,6 @@ type CreateProps = {
 
 type Props = EditProps | CreateProps;
 
-function toLocalInput(isoString: string): string {
-  const date = new Date(isoString);
-  const offset = date.getTimezoneOffset() * 60000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
-}
-
-function parseRRule(rruleStr: string) {
-  const str = rruleStr.replace(/^RRULE:/, "");
-  const parts: Record<string, string> = {};
-  str.split(";").forEach(part => {
-    const [key, val] = part.split("=");
-    if (key && val) parts[key] = val;
-  });
-  const frequency = (parts["FREQ"] as RRuleFrequency) ?? "WEEKLY";
-  const interval = parts["INTERVAL"] ? parseInt(parts["INTERVAL"]) : 1;
-  const days = parts["BYDAY"] ? (parts["BYDAY"].split(",") as RRuleDay[]) : [];
-  let endType: "never" | "until" | "count" = "never";
-  let untilDate = "";
-  let countNum = 1;
-  if (parts["UNTIL"]) {
-    endType = "until";
-    const u = parts["UNTIL"];
-    untilDate = `${u.slice(0, 4)}-${u.slice(4, 6)}-${u.slice(6, 8)}`;
-  } else if (parts["COUNT"]) {
-    endType = "count";
-    countNum = parseInt(parts["COUNT"]);
-  }
-  return { frequency, interval, days, endType, untilDate, countNum };
-}
-
-const DAY_MAP: RRuleDay[] = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
-const getStartDay = (startStr: string): RRuleDay => DAY_MAP[new Date(startStr).getDay()] ?? "MO";
 
 const AVATAR_PALETTE = ["#4285F4", "#EA4335", "#34A853", "#FBBC04", "#9B59B6", "#E67E22", "#16A085"];
 function getAvatarColor(email: string): string | undefined {

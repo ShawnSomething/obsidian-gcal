@@ -12,6 +12,7 @@ import { RecurringModal } from "./RecurringModal";
 import enAU from "@fullcalendar/core/locales/en-au";
 import { ViewDensity, DuplicateModifier } from "../api/types";
 import { desaturateHex } from "../utils/color";
+import { getViewWindow, getAdjacentDates } from "../utils/viewWindow";
 import MiniMonth from "./MiniMonth";
 import ContextMenu from "./ContextMenu";
 import { ConfirmModal } from "./ConfirmModal";
@@ -34,44 +35,6 @@ const MODIFIER_KEY: Record<Exclude<DuplicateModifier, "off">,
   shift: "shiftKey",
 }
 
-function getViewWindow(date: Date, view: "day" | "3day" | "week"): { timeMin: Date; timeMax: Date } {
-  const start = new Date(date);
-  start.setHours(0, 0, 0, 0);
-
-  if (view === "week") {
-    const dayOfWeek = start.getDay();
-    const daysFromMonday = (dayOfWeek + 6) % 7;
-    start.setDate(start.getDate() - daysFromMonday);
-  }
-
-  const end = new Date(start);
-  if (view === "day") end.setDate(end.getDate() + 1);
-  else if (view === "3day") end.setDate(end.getDate() + 3);
-  else end.setDate(end.getDate() + 7);
-
-  return { timeMin: start, timeMax: end };
-}
-
-// Returns the timeMin of the window immediately before and after the given date/view.
-// Both dates are window-aligned (Monday-snapped for week view, etc.).
-function getAdjacentDates(date: Date, view: "day" | "3day" | "week"): { prevDate: Date; nextDate: Date } {
-  const { timeMin: windowStart } = getViewWindow(date, view);
-  const prevDate = new Date(windowStart);
-  const nextDate = new Date(windowStart);
-
-  if (view === "day") {
-    prevDate.setDate(prevDate.getDate() - 1);
-    nextDate.setDate(nextDate.getDate() + 1);
-  } else if (view === "3day") {
-    prevDate.setDate(prevDate.getDate() - 3);
-    nextDate.setDate(nextDate.getDate() + 3);
-  } else {
-    prevDate.setDate(prevDate.getDate() - 7);
-    nextDate.setDate(nextDate.getDate() + 7);
-  }
-
-  return { prevDate, nextDate };
-}
 
 export default function CalendarPanel({ plugin }: Props) {
   const { state, dispatch } = useCalendar();

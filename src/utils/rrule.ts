@@ -38,3 +38,45 @@ export function buildRRule(options: RRuleOptions): string {
 
   return `RRULE:${parts.join(";")}`;
 }
+export interface ParsedRRule {
+  frequency: RRuleFrequency;
+  interval: number;
+  days: RRuleDay[];
+  endType: "never" | "until" | "count";
+  untilDate: string;   // YYYY-MM-DD, "" when endType !== "until"
+  countNum: number;
+}
+
+// Reads a raw RRULE string back into the shape EventModal's form state uses.
+// Inverse of buildRRule for every field buildRRule emits.
+export function parseRRule(rruleStr: string): ParsedRRule {
+  const str = rruleStr.replace(/^RRULE:/, "");
+  const parts: Record<string, string> = {};
+  str.split(";").forEach((part) => {
+    const [key, val] = part.split("=");
+    if (key && val) parts[key] = val;
+  });
+  const frequency = (parts["FREQ"] as RRuleFrequency) ?? "WEEKLY";
+  const interval = parts["INTERVAL"] ? parseInt(parts["INTERVAL"]) : 1;
+  const days = parts["BYDAY"] ? (parts["BYDAY"].split(",") as RRuleDay[]) : [];
+  let endType: "never" | "until" | "count" = "never";
+  let untilDate = "";
+  let countNum = 1;
+  if (parts["UNTIL"]) {
+    endType = "until";
+    const u = parts["UNTIL"];
+    untilDate = `${u.slice(0, 4)}-${u.slice(4, 6)}-${u.slice(6, 8)}`;
+  } else if (parts["COUNT"]) {
+    endType = "count";
+    countNum = parseInt(parts["COUNT"]);
+  }
+  return { frequency, interval, days, endType, untilDate, countNum };
+}
+
+// Index by Date.getDay() (0 = Sunday). Array access is checked under
+// noUncheckedIndexedAccess, hence the ?? fallback.
+export const DAY_MAP: RRuleDay[] = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+
+export function getStartDay(startStr: string): RRuleDay {
+  return DAY_MAP[new Date(startStr).getDay()] ?? "MO";
+}
