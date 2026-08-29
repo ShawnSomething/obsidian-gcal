@@ -1703,3 +1703,62 @@ browser.
 
 Put new logic in a pure function under `src/utils/` and test it there. That is what made
 the buffer scan design (`computeBufferCandidates`) testable before it is written.
+
+---
+
+## 16. Lint Cleanup — 29 Aug 2026
+
+`eslint .` had been failing on 36 errors, so the CI lint job was red. All 36 are now
+resolved and `eslint .` exits 0. The rule still fires on genuine mistakes — verified by
+temporarily introducing bad casing.
+
+### Two credential leaks removed
+
+`OAuthManager.ts` logged the full token exchange response, and `SettingsTab.ts` logged
+the whole `AccountConfig`. Both objects contain `accessToken` **and** `refreshToken` in
+plaintext. For a published plugin that is a real exposure path: devtools, a screen share
+during debugging, or console output pasted into a GitHub issue all leak a long-lived
+refresh token with full calendar access. Deleted. The `console.error` on auth failure is
+allowed by the rule and stays.
+
+### Globals declared instead of code changed (11 errors)
+
+`activeDocument`, `activeWindow` and `Buffer` were flagged `no-undef` because
+`eslint.config.mts` only loaded `globals.browser`. They are legitimate — Obsidian injects
+the first two for pop-out window support, and `OAuthManager` runs in Electron's node
+context. Declared in the config; no source touched.
+
+### Command names de-duplicated (9 strings)
+
+Obsidian prefixes command names with the plugin name automatically, so
+`"Google Calendar: Day view"` was rendering as **"GCal Sidebar: Google Calendar: Day view"**.
+The prefix was dropped from all 9 commands. **Command IDs were not changed**, so existing
+hotkey bindings are unaffected.
+
+### Deprecations suppressed with reasons, not migrated
+
+| API | Why it stays |
+|---|---|
+| `setWarning()` | Purely cosmetic — both it and `setDestructive()` render a red button. `setDestructive` needs Obsidian 1.13.0. Commit `b776c4d` already tried it and reverted, because it forced `minAppVersion` from 1.0.0 up to 1.13.1. |
+| `display()` ×2 | Obsidian's own type definitions state display() is *"only implemented as a fallback for plugins that need to support Obsidian versions older than 1.13.0"* — exactly this plugin at 1.7.2. The replacement, `getSettingDefinitions()`, is a declarative rewrite of the whole tab, not a swap. |
+
+Both carry inline comments naming the version constraint. Revisit only if `minAppVersion`
+is raised to 1.13.0, which would drop every user below it.
+
+### sentence-case configured rather than suppressed (19 errors)
+
+Five were genuine ("Client Secret" → "Client secret", "Connected Accounts" →
+"Connected accounts", and so on). The remaining seven were false positives: the rule has
+no proper-noun awareness and flags any capitalised word mid-string, including "Google",
+the plugin's own name, and two literal credential placeholders.
+
+Rather than scatter seven `eslint-disable` comments, the rule is configured in
+`eslint.config.mts` with `brands` and `ignoreRegex`. **`brands` replaces the plugin's
+default list rather than extending it**, so all 46 defaults are repeated in the config
+with our additions appended — re-sync that list if the plugin ever updates it.
+
+### CI
+
+`.github/workflows/lint.yml` runs `npm test` **before** `npm run lint`. That order was
+chosen while lint was still failing; now that both pass it matters less, but tests-first
+means a broken test is reported even if a lint rule regresses.
