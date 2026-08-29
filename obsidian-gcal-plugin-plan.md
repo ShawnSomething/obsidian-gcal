@@ -1,7 +1,7 @@
 # Obsidian Google Calendar Plugin — PRD + Tech Design
 
 ## Status
-`Shipped — Phase 14 (Copy-Drag Ghost) DONE` — Updated 29 Aug 2026
+`Phases 1–14 shipped. Tests + lint green. Phase 15 (buffers) designed, not started.` — Updated 29 Aug 2026
 
 ---
 
@@ -1324,6 +1324,111 @@ decision is made at mouse-release.
 drop position with class `fc-event-mirror`, so `.gcal-copy-drag .fc-event-mirror` styles
 it without creating anything.
 
+### Phase 15 — Automatic Task Prep Buffers ⏳ PLANNED
+
+Not started. Full design below — this is the next feature.
+
+**Goal:** stop hand-creating a 15-minute "Task Prep" event before every meeting. Scan a
+chosen calendar and create one automatically wherever there is a free slot in front of a
+meeting.
+
+**The rule.** For a meeting starting at `T`, the buffer slot is `[T - 15min, T)`. Create
+it only if no busy event overlaps: `eventStart < T && eventEnd > T - 15min`.
+
+Worked example — a 1pm meeting running to 2pm, and another at 2pm. The slot before 2pm
+collides with the 1pm meeting, so nothing is created. The slot before 1pm is free, so a
+12:45 buffer appears. This is self-limiting: an existing buffer occupies its own slot, so
+the next scan will not create a second one.
+
+**A meeting qualifies only if** it has at least one attendee other than you (skips focus
+blocks and solo time-blocking), is not all-day, is not declined, is not itself a buffer,
+and its buffer slot starts in the future.
+
+**An event counts as busy if** it is on one of the user-selected busy calendars, is not
+all-day, and is not declined. Buffers count as busy — that is what prevents duplicates.
+
+**Tag every buffer** with `extendedProperties.private.gcalBuffer = "1"` and
+`gcalBufferFor = <meeting event id>`. This ships in v1 even though nothing reads
+`gcalBufferFor` yet: without a tag there is no reliable way to identify a buffer later,
+and adding one afterwards leaves every existing buffer unidentifiable. Title matching is
+not a substitute because the user can rename an event.
+
+**Settings** — new `bufferSettings` on `PluginData`, defaults in `TokenStore.defaultData()`:
+
+| Setting | Default |
+|---|---|
+| `enabled` (auto-run on the 5-min poll) | `false` |
+| `sourceCalendarId` | `""` |
+| `targetCalendarId` | falls back to source |
+| `busyCalendarIds: string[]` | all cached calendars |
+| `durationMinutes` | `15` |
+| `title` | `"Task Prep"` |
+| `horizonDays` | `2` |
+| `maxPerRun` | `10` |
+
+Horizon is 2 days, not a week: v1 has no orphan cleanup, so every meeting that moves after
+its buffer is created leaves a stray event. Two days covers the realistic prep window.
+
+**Calendar pickers.** `SettingsTab` cannot reach the React context holding
+`state.calendars`. Extend the existing effect in `CalendarPanel.tsx` that already writes
+`plugin.data.calendarVisibility` on every calendar change to also write
+`plugin.data.calendarCache`. No new API calls. Filter the target dropdown to
+`accessRole === "owner" || "writer"`, the same filter EventModal's create selector uses.
+
+**New pure module — `src/utils/buffers.ts`:**
+
+```ts
+export function computeBufferCandidates(
+  meetings: CalEvent[],
+  busy: CalEvent[],
+  config: BufferSettings,
+  now: Date,
+): BufferCandidate[]
+```
+
+No I/O, mirroring `utils/rrule.ts`. Being pure is what makes it testable before a line of
+it is written — see section 15. Must dedupe candidates by start time: two meetings
+double-booked at 10am would otherwise both request a 9:45 buffer.
+
+**API layer.** Add optional `extendedProperties` and `colorId` to `postEvent`; carry
+`extendedProperties` through `mapItem` and onto `CalEvent`. Reuse `getEvents` unchanged
+for the horizon fetch — it already takes arbitrary `timeMin`/`timeMax`. Note `postEvent`
+now takes `sendUpdates` as its third parameter; buffers have no attendees so either value
+is harmless, but pass `"none"`.
+
+**Scan flow** — a `runBufferScanRef` in `CalendarPanel.tsx`, assigned each render like the
+existing fetch refs:
+
+1. Bail if no `sourceCalendarId`.
+2. Fetch `now → now + horizonDays` for the source and every busy calendar via `Promise.all`.
+3. Call `computeBufferCandidates`.
+4. Empty → toast "No buffers needed", stop.
+5. Slice to `maxPerRun`, POST **sequentially** — predictable request volume, clean partial
+   state if one fails.
+6. `ADD_EVENT` for each buffer landing inside the current window.
+7. Toast the count, or the error.
+
+Wire a `gcal-create-buffers` command through `CommandBridge` following the existing
+`duplicate` pattern. For auto-run, call the scan after `runFullRefreshRef` resolves in the
+poll effect, guarded by `enabled`.
+
+Do **not** trigger the scan from a `useEffect` on `state.windowEvents.current` — that
+fires after every write operation and would run it constantly.
+
+**Safety:** `enabled` defaults off, so the command works immediately but unattended
+running is opt-in. `maxPerRun` caps a runaway at 10. Sequential POSTs. Every buffer tagged
+so a bad batch can be found and removed.
+
+**Out of scope for v1:** orphan cleanup (deletion is higher-stakes and should not ship
+alongside the thing that creates the events; the `gcalBufferFor` tag makes it easy to add
+later), shrink-to-fit for gaps under 15 minutes, and a distinct in-plugin colour.
+
+**Verification order.** Configure a source calendar with `enabled` off. Run the command,
+check the toast count. Verify the 1pm/2pm case. **Run the command a second time
+immediately — it must report zero created.** That idempotency check is the most important
+one. Then confirm nothing is created before an all-day event, a solo event, a declined
+meeting, or a meeting under 15 minutes away. Only then enable the toggle.
+
 ---
 
 ## 10. Known Risks
@@ -1398,6 +1503,12 @@ it without creating anything.
 | `activeDocument` is `no-undef` | Obsidian's global is not in the eslint config; the codebase already carries ~9 of these. Capture it once into a local `const doc` per handler rather than referencing it repeatedly. |
 | `postEvent` notified on every duplicate | The URL hardcoded `sendUpdates=all`, so duplicating a meeting emailed every attendee instantly. Now a parameter defaulting to `"all"`; only the drag path passes `"none"`. |
 | Changing a shared handler's default is a regression | `handleDuplicate` has three callers. Passing `"none"` inside the function body silently changed the shipped command and context-menu duplicate. Add an optional parameter and pass it from the new call site only. |
+| Google Drive vault serves stale builds | The real vault holds a static copy of `main.js` on Drive's virtual filesystem. A copy reads back byte-identical from the shell while Obsidian keeps loading cached bytes — it cost four debugging rounds on 29 Aug. Test in `gcal-test`, which is symlinked. If a change seems not to apply, prove the build is loading at all with a `Notice` in `onload` before debugging the feature. |
+| `console.debug` is invisible in Obsidian | It maps to Chromium's Verbose level, hidden by default in devtools. Instrument with `console.warn`, or a `Notice` when the console itself is in doubt. |
+| Never log token or account objects | `AccountConfig` and the token exchange response both contain `accessToken` and `refreshToken` in plaintext. Logging either exposes long-lived calendar access via devtools, screen shares, or pasted issue output. |
+| Renaming a command is not cosmetic if the ID moves | Hotkeys bind to `addCommand` IDs, not names, and `VIEW_TYPE` binds workspace layout. Renaming display text is safe; changing an ID silently breaks user bindings. Nothing tests this yet. |
+| eslint `brands` replaces rather than extends | Configuring `obsidianmd/ui/sentence-case` with `brands` discards all 46 plugin defaults. `eslint.config.mts` repeats them; re-sync if the plugin updates its list. |
+| A test that cannot fail protects nothing | Confirm each regression test goes red when its bug is reintroduced. One mutation check on 29 Aug silently hit a doc comment rather than the code and falsely reported the suite as green. |
 
 ---
 
@@ -1451,6 +1562,18 @@ it without creating anything.
 | Ghost live-tracks the modifier | Yes, via `keydown`/`keyup` during the drag | The decision happens at release, so a visual frozen at drag start could show no ghost while still producing a duplicate. |
 | Ghost DOM location | `activeDocument.body`, `position: fixed` | Escapes the wrapper's `overflow: hidden` without touching any container's CSS. Same approach as `ContextMenu`. |
 | Wrapper class toggling | `classList.toggle`, not JSX `className` | Avoids a React re-render on every keypress mid-drag, and leaves the container's declared class untouched. |
+| Test runner | Vitest | Native ESM + TypeScript with no transform config, matching `"type": "module"` and esbuild. Aliasing the types-only `obsidian` package to a stub is one line. |
+| Test location | Top-level `tests/`, included in tsconfig | Keeps `src/` shippable while still getting test files typechecked by `npm run build` and parseable by eslint's typed rules. |
+| What gets tested | Pure logic only | React components need jsdom plus mocks for Obsidian, FullCalendar and the plugin object — brittle and prone to asserting implementation detail. `OAuthManager` opens a real HTTP server. The logic they depend on is covered instead. |
+| Making code testable | Extract pure helpers to `src/utils/` | `getViewWindow`, `getAdjacentDates`, `toLocalInput`, `parseRRule` were trapped inside components. Pure moves, no behaviour change. New logic should start in `utils/` for the same reason. |
+| Regression tests must be mutation-tested | Reintroduce the bug, confirm red | A test that cannot fail protects nothing. All three of the session's real bugs were verified this way. |
+| `@types/node` bump ^16 → ^22 | Required by Vitest 4 | Peer requires >=20; repo runs Node 24 locally, CI on 20/22. Build and lint verified unchanged after. |
+| CI step order | `npm test` before `npm run lint` | Chosen while lint was still failing on 36 errors — a test step after it would never execute. Retained so a broken test still reports if a lint rule regresses. |
+| Deprecated `setWarning` / `display` | Suppressed with documented reasons, not migrated | Both are the sanctioned path for `minAppVersion` below 1.13.0. Obsidian's own types say `display()` is "only implemented as a fallback for plugins that need to support Obsidian versions older than 1.13.0". Migrating means rewriting SettingsTab and dropping every user under 1.13. |
+| sentence-case false positives | Configured `brands` / `ignoreRegex`, not `eslint-disable` | The rule has no proper-noun awareness and flags any capitalised word mid-string. Configuring keeps it live for genuine mistakes. Note `brands` REPLACES the default list, so all 46 defaults are repeated in `eslint.config.mts`. |
+| Command names | Dropped the `"Google Calendar: "` prefix | Obsidian prefixes commands with the plugin name itself, so they rendered as "GCal Sidebar: Google Calendar: Day view". IDs were left untouched — hotkeys bind to IDs, not names. |
+| Obsidian globals | Declared in eslint config, not worked around in code | `activeDocument`, `activeWindow` and `Buffer` are legitimate; the config only loaded `globals.browser`. |
+| Token logging | Deleted outright | `console.log` of the token exchange response and of `AccountConfig` printed `accessToken` and `refreshToken` in plaintext. |
 
 ---
 
@@ -1458,14 +1581,25 @@ it without creating anything.
 
 **Last updated:** 29 Aug 2026
 
-- All phases 1–14: DONE
-- Test suite: 71 Vitest tests across 6 files, wired into CI (see section 15)
-- Plugin published to the Obsidian Community store
-- `manifest.json` at `1.0.18`, `minAppVersion` `1.7.2`
-- Working tree clean; baseline for the drag work was `7fdfff5`
+### Done
+
+- Phases 1–14 complete. Plugin published to the Obsidian Community store.
+- `manifest.json` at `1.0.18`, `minAppVersion` `1.7.2`.
+- Test suite: 71 Vitest tests, 6 files, wired into CI (section 15).
+- `eslint .` exits 0. It had been failing on 36 errors, so the CI lint job was red (section 16).
+- Full gate verified green: `tsc`, `npm test`, `eslint .`, production build.
+
+### Open items — start here next session
+
+1. **Ship a release carrying the lint fixes.** The removed token-logging `console.log`
+   calls are in the repo but not in any published build. Shawn is handling this via a
+   normal release rather than hand-copying builds into vaults.
+2. **Phase 15 — automatic Task Prep buffers.** Designed in full below, not started.
 
 ### Next session start
-Paste this doc + current `CalendarPanel.tsx` + current `CalendarContext.tsx` at the top of a new thread.
+
+Paste this doc plus current `CalendarPanel.tsx` and `CalendarContext.tsx`. The doc is
+self-contained — no verbal history needed.
 
 ### Testing
 Use the **`gcal-test`** vault. It is symlinked to the build and updates on the first reload.
@@ -1624,7 +1758,7 @@ Split `fetchAllRef` into three refs in `CalendarPanel.tsx`:
 
 ## 15. Testing
 
-Added 29 Aug 2026. Vitest, 71 tests across 6 files in `tests/`.
+Added 29 Aug 2026. Vitest, 79 tests across 7 files in `tests/`.
 
 ### Running
 
@@ -1645,10 +1779,19 @@ a test runner. `vitest.config.ts` aliases the bare specifier to `tests/stubs/obs
 which implements only the surface the source actually uses and exposes `requestUrl` as a
 `vi.fn()` so tests can drive the HTTP layer.
 
+This split bites twice, and will again. Vitest rewrites `"obsidian"` to the stub at
+runtime; `tsc` always resolves it to the real types-only package. So anything the stub
+adds — its `makeResponse` helper, the `Plugin` recording fields, its zero-argument
+constructor — exists at runtime but not to the compiler. Two consequences:
+
 **Test files import the stub by path (`./stubs/obsidian`), not as `"obsidian"`.** The
 vitest alias applies at runtime; `tsc` still resolves the bare specifier to the real
 types-only package and would reject the stub's test helpers. Same file either way, so it
 is the same module instance the API under test holds.
+
+**Tests that exercise a stubbed base class declare a local interface for what they
+need and cast to it**, rather than intersecting with the real Obsidian type. See
+`RecordingPlugin` in `commandIds.test.ts`.
 
 ### What is covered
 
@@ -1660,6 +1803,7 @@ is the same module instance the API under test holds.
 | `datetime.test.ts` | `toLocalInput` round-tripping to the same instant |
 | `color.test.ts` | `desaturateHex` clamping and hue handling |
 | `googleCalendarApi.test.ts` | URL construction, `sendUpdates` policy per operation, request bodies, and Google→`CalEvent` mapping |
+| `commandIds.test.ts` | The 9 `addCommand` ids and `VIEW_TYPE` — the strings persisted in a user's vault that hotkeys and workspace layout bind to. Also guards against the double-prefixed command names fixed in Phase 13/14 |
 
 ### Extractions this required
 
@@ -1687,6 +1831,9 @@ Each regression test was confirmed to fail when its bug is reintroduced:
 | `/events?sendUpdates=${sendUpdates}` → `/event${sendUpdates}` | 3 tests fail |
 | `postEvent` default `"all"` → `"none"` | 1 test fails |
 | `(dayOfWeek + 6) % 7` → `dayOfWeek - 1` | 1 test fails |
+| Renaming a command id | 1 test fails |
+| Changing `VIEW_TYPE` | 2 tests fail |
+| Restoring a `"Google Calendar: "` command name prefix | 2 tests fail |
 
 A test that cannot fail is not protecting anything. Re-run this check when adding
 regression tests.
