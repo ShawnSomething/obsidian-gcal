@@ -20,8 +20,21 @@
               "icon": "lucide-file",
               "title": "Welcome"
             }
+          },
+          {
+            "id": "83f955d772a37d7a",
+            "type": "leaf",
+            "state": {
+              "type": "release-notes",
+              "state": {
+                "currentVersion": "1.13.7"
+              },
+              "icon": "lucide-book-up",
+              "title": "Release Notes 1.13.7"
+            }
           }
-        ]
+        ],
+        "currentTab": 1
       }
     ],
     "direction": "vertical"
@@ -195,7 +208,7 @@
       "gcal-sidebar:GCal Sidebar": false
     }
   },
-  "active": "15c8d250579361da",
+  "active": "83f955d772a37d7a",
   "lastOpenFiles": [
     "Untitled.base",
     "2026-05-24.md",
