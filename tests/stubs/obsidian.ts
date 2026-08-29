@@ -24,7 +24,43 @@ export const requestUrl = vi.fn<(p: RequestUrlParam) => Promise<RequestUrlRespon
 export class Notice {
   constructor(public message: string, public timeout?: number) {}
 }
-export class Plugin {}
+
+export interface CommandSpec {
+  id: string;
+  name: string;
+  callback?: () => void;
+}
+
+/**
+ * Records what a plugin registers during onload() so tests can assert on it.
+ * Only the methods GCalPlugin.onload() actually calls are implemented.
+ */
+export class Plugin {
+  app: App = new App();
+  commands: CommandSpec[] = [];
+  views: string[] = [];
+  ribbonIcons: { icon: string; title: string }[] = [];
+  private stored: unknown = null;
+
+  addCommand(cmd: CommandSpec): CommandSpec {
+    this.commands.push(cmd);
+    return cmd;
+  }
+  addRibbonIcon(icon: string, title: string): HTMLElement {
+    this.ribbonIcons.push({ icon, title });
+    return {} as HTMLElement;
+  }
+  addSettingTab(): void {}
+  registerView(type: string): void {
+    this.views.push(type);
+  }
+  async loadData(): Promise<unknown> {
+    return this.stored;
+  }
+  async saveData(data: unknown): Promise<void> {
+    this.stored = data;
+  }
+}
 export class PluginSettingTab {}
 export class Modal {}
 export class ItemView {}
