@@ -973,3 +973,28 @@
 .gcal-calendar-item:hover {
     background: var(--background-secondary);
 }
+/* ─── Copy-drag ghost ─────────────────────────────────────────── */
+
+.gcal-drag-ghost {
+  position: fixed;
+  margin: 0;
+  opacity: 0.4;
+  pointer-events: none;
+  z-index: 500;
+  border-style: dashed !important;
+}
+
+.gcal-copy-drag .fc-event-mirror {
+  border-style: dashed !important;
+}
+
+.gcal-copy-drag .fc-event-mirror::after {
+  content: "+";
+  position: absolute;
+  right: 3px;
+  bottom: 1px;
+  font-weight: bold;
+  font-size: 13px;
+  line-height: 1;
+  pointer-events: none;
+}

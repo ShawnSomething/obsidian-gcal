@@ -244,6 +244,24 @@ export default function CalendarPanel({ plugin }: Props) {
 
   const eventElementMap = useRef<Map<HTMLElement, CalEvent>>(new Map());
 
+  const dragGhostRef = useRef<HTMLElement | null>(null);
+  const dragKeyCleanupRef = useRef<(() => void) | null>(null);
+
+  const setCopyVisual = (on: boolean) => {
+    const ghost = dragGhostRef.current;
+    if (ghost) {
+      ghost.style.display = on ? "" : "none";
+    }
+    calendarWrapperRef.current?.classList.toggle("gcal-copy-drag", on);
+  };
+
+  const endCopyVisual = () => {
+    dragGhostRef.current?.remove();
+    dragGhostRef.current = null;
+    dragKeyCleanupRef.current?.();
+    dragKeyCleanupRef.current = null;
+    calendarWrapperRef.current?.classList.remove("gcal-copy-drag");
+  };
   // ─── Ref assignments (re-run every render, always latest closure) ───────────
 
   fetchCalendarsRef.current = async (): Promise<CalendarMeta[]> => {
@@ -704,6 +722,36 @@ export default function CalendarPanel({ plugin }: Props) {
             return calEvent.selfResponseStatus === "needsAction"
               ? ["gcal-event-needs-action"]
               : [];
+          }}
+          eventDragStart={(info) => {
+            const mod = plugin.data.duplicateModifier ?? "meta";
+            if (mod === "off") return;
+            const key = MODIFIER_KEY[mod];
+
+            const doc = activeDocument;
+            const rect = info.el.getBoundingClientRect();
+            const ghost = info.el.cloneNode(true) as HTMLElement;
+            ghost.classList.remove("fc-event-mirror", "fc-event-dragging");
+            ghost.classList.add("gcal-drag-ghost");
+            ghost.style.left = `${rect.left}px`;
+            ghost.style.top = `${rect.top}px`;
+            ghost.style.width = `${rect.width}px`;
+            ghost.style.height = `${rect.height}px`;
+            doc.body.appendChild(ghost);
+            dragGhostRef.current = ghost;
+
+            setCopyVisual(info.jsEvent[key]);
+
+            const onKey = (e: KeyboardEvent) => setCopyVisual(e[key]);
+            doc.addEventListener("keydown", onKey);
+            doc.addEventListener("keyup", onKey);
+            dragKeyCleanupRef.current = () => {
+              doc.removeEventListener("keydown", onKey);
+              doc.removeEventListener("keyup", onKey);
+            };
+          }}
+          eventDragStop={() => {
+            endCopyVisual();
           }}
           eventDrop={(info) => {
             const calEvent = info.event.extendedProps.calEvent as CalEvent;

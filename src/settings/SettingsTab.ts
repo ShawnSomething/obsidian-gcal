@@ -132,7 +132,6 @@ export class SettingsTab extends PluginSettingTab {
 					dd
 						.addOption("off", "Off")
 						.addOption("meta", "Cmd")
-						.addOption("ctrl", "Ctrl")
 						.addOption("alt", "Alt")
 						.addOption("shift", "Shift")
 						.setValue(data.duplicateModifier ?? "meta")
