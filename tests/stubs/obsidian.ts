@@ -10,6 +10,8 @@ export interface RequestUrlParam {
   method?: string;
   headers?: Record<string, string>;
   body?: string;
+  /** Obsidian throws on status 400+ unless this is explicitly false. */
+  throw?: boolean;
 }
 
 export interface RequestUrlResponse {
@@ -18,8 +20,30 @@ export interface RequestUrlResponse {
   text: string;
 }
 
-/** Configure per-test with `vi.mocked(requestUrl).mockResolvedValue(...)`. */
-export const requestUrl = vi.fn<(p: RequestUrlParam) => Promise<RequestUrlResponse>>();
+type Responder = (p: RequestUrlParam) => RequestUrlResponse | Promise<RequestUrlResponse>;
+
+let responder: Responder = () => makeResponse(200, {});
+
+/** Set what requestUrl returns. Throw-on-4xx is layered on top, as in Obsidian. */
+export function respondWith(r: Responder | RequestUrlResponse): void {
+  responder = typeof r === "function" ? r : () => r;
+}
+
+/**
+ * Mirrors the real contract: Obsidian's requestUrl throws on status 400+ unless
+ * the caller passes `throw: false`. A resolving stub is what let 14 unreachable
+ * `response.status` checks — and the rollbacks behind them — ship green.
+ * Any call that forgets `throw: false` now throws here too.
+ */
+export const requestUrl = vi.fn(
+  async (p: RequestUrlParam): Promise<RequestUrlResponse> => {
+    const res = await responder(p);
+    if (res.status >= 400 && p.throw !== false) {
+      throw new Error(`Request failed, status ${res.status}`);
+    }
+    return res;
+  }
+);
 
 export class Notice {
   constructor(public message: string, public timeout?: number) {}

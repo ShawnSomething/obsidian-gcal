@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // Imported by path, not as "obsidian": vitest.config aliases the bare
 // specifier at runtime, but tsc resolves it to the real types-only package.
 // Same file either way, so this is the same module instance the API uses.
-import { requestUrl, makeResponse } from "./stubs/obsidian";
+import { requestUrl, makeResponse, respondWith } from "./stubs/obsidian";
+import type { RequestUrlResponse } from "./stubs/obsidian";
+import type { CalEvent } from "../src/context/CalendarContext";
 import { GoogleCalendarAPI } from "../src/api/GoogleCalendarAPI";
 import type { TokenStore } from "../src/auth/TokenStore";
 import type { AccountConfig } from "../src/api/types";
@@ -35,10 +37,10 @@ const lastCall = () => vi.mocked(requestUrl).mock.calls.at(-1)?.[0];
 const lastBody = () => JSON.parse(lastCall()?.body ?? "{}") as EventBody;
 
 beforeEach(() => {
-  vi.mocked(requestUrl).mockReset();
-  vi.mocked(requestUrl).mockResolvedValue(
-    makeResponse(200, { id: "e1", iCalUID: "u1" })
-  );
+  // mockClear, not mockReset — mockReset drops the stub's throw-on-4xx
+  // implementation and every test starts passing for the wrong reason.
+  vi.mocked(requestUrl).mockClear();
+  respondWith(makeResponse(200, { id: "e1", iCalUID: "u1" }));
 });
 
 describe("postEvent — URL construction (regression)", () => {
@@ -130,7 +132,7 @@ describe("postEvent — body", () => {
   });
 
   it("throws with Google's message on a non-2xx response", async () => {
-    vi.mocked(requestUrl).mockResolvedValue(
+    respondWith(
       makeResponse(403, { error: { message: "Quota exceeded" } })
     );
     await expect(api.postEvent(account, "cal-a", base)).rejects.toThrow("Quota exceeded");
@@ -197,7 +199,7 @@ describe("patchAttendeeResponse", () => {
 
 describe("getEvents — mapping Google's shape onto CalEvent", () => {
   it("drops cancelled events", async () => {
-    vi.mocked(requestUrl).mockResolvedValue(makeResponse(200, {
+    respondWith(makeResponse(200, {
       items: [
         { id: "a", iCalUID: "ua", status: "confirmed", start: { dateTime: "2026-03-18T09:00:00Z" }, end: { dateTime: "2026-03-18T10:00:00Z" } },
         { id: "b", iCalUID: "ub", status: "cancelled", start: { dateTime: "2026-03-18T11:00:00Z" }, end: { dateTime: "2026-03-18T12:00:00Z" } },
@@ -208,7 +210,7 @@ describe("getEvents — mapping Google's shape onto CalEvent", () => {
   });
 
   it("infers allDay from the absence of dateTime", async () => {
-    vi.mocked(requestUrl).mockResolvedValue(makeResponse(200, {
+    respondWith(makeResponse(200, {
       items: [{ id: "a", iCalUID: "ua", start: { date: "2026-03-18" }, end: { date: "2026-03-19" } }],
     }));
     const [e] = await api.getEvents(account, "cal-a", new Date(), new Date());
@@ -219,7 +221,7 @@ describe("getEvents — mapping Google's shape onto CalEvent", () => {
   it("treats an event with no attendees as accepted", async () => {
     // Your own events carry no attendee entry for you; defaulting to
     // needsAction would render every solo block as crosshatched.
-    vi.mocked(requestUrl).mockResolvedValue(makeResponse(200, {
+    respondWith(makeResponse(200, {
       items: [{ id: "a", iCalUID: "ua", start: { dateTime: "2026-03-18T09:00:00Z" }, end: { dateTime: "2026-03-18T10:00:00Z" } }],
     }));
     const [e] = await api.getEvents(account, "cal-a", new Date(), new Date());
@@ -227,7 +229,7 @@ describe("getEvents — mapping Google's shape onto CalEvent", () => {
   });
 
   it("reads selfResponseStatus from the self attendee", async () => {
-    vi.mocked(requestUrl).mockResolvedValue(makeResponse(200, {
+    respondWith(makeResponse(200, {
       items: [{
         id: "a", iCalUID: "ua",
         start: { dateTime: "2026-03-18T09:00:00Z" }, end: { dateTime: "2026-03-18T10:00:00Z" },
@@ -242,7 +244,7 @@ describe("getEvents — mapping Google's shape onto CalEvent", () => {
   });
 
   it("falls back to a placeholder title rather than undefined", async () => {
-    vi.mocked(requestUrl).mockResolvedValue(makeResponse(200, {
+    respondWith(makeResponse(200, {
       items: [{ id: "a", iCalUID: "ua", start: { dateTime: "2026-03-18T09:00:00Z" }, end: { dateTime: "2026-03-18T10:00:00Z" } }],
     }));
     const [e] = await api.getEvents(account, "cal-a", new Date(), new Date());
@@ -250,8 +252,101 @@ describe("getEvents — mapping Google's shape onto CalEvent", () => {
   });
 
   it("requests single events so recurring series expand into instances", async () => {
-    vi.mocked(requestUrl).mockResolvedValue(makeResponse(200, { items: [] }));
+    respondWith(makeResponse(200, { items: [] }));
     await api.getEvents(account, "cal-a", new Date("2026-03-18"), new Date("2026-03-19"));
     expect(lastCall()?.url).toContain("singleEvents=true");
+  });
+});
+
+describe("splitRecurringSeries — ordering and rollback (regression)", () => {
+  // The bug this file now guards: the split used to truncate the master first,
+  // which made the instance id stop resolving, so the DELETE that followed got
+  // a 400. requestUrl threw before the rollback could run, leaving the series
+  // truncated and every occurrence from that date onward gone.
+  const ORIGINAL_RRULE = ["RRULE:FREQ=WEEKLY;BYDAY=MO"];
+
+  const instance = {
+    id: "m1_20260518T090000Z",
+    iCalUID: "u1",
+    calendarId: "cal-a",
+    accountId: "me@example.com",
+    title: "Standup",
+    start: "2026-05-18T09:00:00+08:00",
+    end: "2026-05-18T09:15:00+08:00",
+    allDay: false,
+    htmlLink: "",
+    color: "",
+    attendees: [],
+    selfResponseStatus: "accepted",
+    recurringEventId: "m1",
+  } as CalEvent;
+
+  const updates = {
+    title: "Standup",
+    start: "2026-05-18T10:00:00.000Z",
+    end: "2026-05-18T10:15:00.000Z",
+    allDay: false,
+  };
+
+  const master = makeResponse(200, { id: "m1", iCalUID: "u1", recurrence: ORIGINAL_RRULE });
+
+  /** Respond per HTTP method; anything unlisted succeeds. */
+  const routeBy = (map: Record<string, RequestUrlResponse>) =>
+    respondWith((p) => map[p.method ?? "GET"] ?? makeResponse(200, { id: "new", iCalUID: "un" }));
+
+  const methods = () =>
+    vi.mocked(requestUrl).mock.calls.map((c) => c[0].method ?? "GET");
+
+  const bodies = (method: string) =>
+    vi.mocked(requestUrl).mock.calls
+      .filter((c) => c[0].method === method)
+      .map((c) => JSON.parse(c[0].body ?? "{}") as EventBody);
+
+  it("deletes the instance before truncating the master", async () => {
+    // Reverse these two and Google 400s the delete. That is the whole bug.
+    routeBy({ GET: master });
+    await api.splitRecurringSeries(account, "cal-a", instance, updates);
+    expect(methods()).toEqual(["GET", "DELETE", "PATCH", "POST"]);
+  });
+
+  it("targets the instance id on the delete, not the master", async () => {
+    routeBy({ GET: master });
+    await api.splitRecurringSeries(account, "cal-a", instance, updates);
+    const del = vi.mocked(requestUrl).mock.calls.find((c) => c[0].method === "DELETE");
+    expect(del?.[0].url).toContain(encodeURIComponent(instance.id));
+  });
+
+  it("treats an already-gone instance as success", async () => {
+    // 404/410 means the occurrence is absent, which is the state we wanted.
+    routeBy({ GET: master, DELETE: makeResponse(404, { error: { message: "Not Found" } }) });
+    await expect(
+      api.splitRecurringSeries(account, "cal-a", instance, updates)
+    ).resolves.toBeUndefined();
+    expect(methods()).toContain("POST");
+  });
+
+  it("leaves the master untouched when the instance delete fails", async () => {
+    // The delete runs first precisely so a failure here costs nothing.
+    routeBy({ GET: master, DELETE: makeResponse(400, { error: { message: "Bad Request" } }) });
+    await expect(
+      api.splitRecurringSeries(account, "cal-a", instance, updates)
+    ).rejects.toThrow("400");
+    expect(methods()).not.toContain("PATCH");
+    expect(methods()).not.toContain("POST");
+  });
+
+  it("restores the original recurrence when the new series fails to post", async () => {
+    routeBy({ GET: master, POST: makeResponse(400, { error: { message: "Invalid" } }) });
+    await expect(
+      api.splitRecurringSeries(account, "cal-a", instance, updates)
+    ).rejects.toThrow(/restored/i);
+    // Two PATCHes: the truncation, then the rollback putting the RRULE back.
+    expect(bodies("PATCH").at(-1)?.recurrence).toEqual(ORIGINAL_RRULE);
+  });
+
+  it("truncates the master with an UNTIL", async () => {
+    routeBy({ GET: master });
+    await api.splitRecurringSeries(account, "cal-a", instance, updates);
+    expect(bodies("PATCH")[0]?.recurrence?.[0]).toMatch(/UNTIL=\d{8}T\d{6}Z/);
   });
 });

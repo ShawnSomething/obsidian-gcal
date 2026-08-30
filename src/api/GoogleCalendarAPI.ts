@@ -76,6 +76,7 @@ export class GoogleCalendarAPI {
 		return requestUrl({
 			url,
 			headers: { Authorization: `Bearer ${token}` },
+			throw: false,
 		});
 	}
 
@@ -88,6 +89,7 @@ export class GoogleCalendarAPI {
 			url,
 			method: "DELETE",
 			headers: { Authorization: `Bearer ${token}` },
+			throw: false,
 		});
 	}
 
@@ -105,6 +107,7 @@ export class GoogleCalendarAPI {
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify(body),
+			throw: false,
 		});
 	}
 
@@ -122,6 +125,7 @@ export class GoogleCalendarAPI {
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify(body),
+			throw: false,
 		});
 	}
 
@@ -139,6 +143,7 @@ export class GoogleCalendarAPI {
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify(body),
+			throw: false,
 		});
 	}
 
@@ -400,35 +405,37 @@ export class GoogleCalendarAPI {
 			return "RRULE:" + parts.join(";");
 		});
 
-		// Step 1 — truncate the master series
+		// Step 1 — remove the original instance while it is still a live occurrence.
+		// Once the master is truncated this id no longer resolves to anything in the
+		// series and Google answers 400. 404/410 means it is already gone, which is
+		// the state we want, so both count as success.
+		const deleteRes = await this.deleteWithAuth(
+			account,
+			`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(instance.id)}?sendUpdates=none`,
+		);
+		if (
+			(deleteRes.status < 200 || deleteRes.status >= 300) &&
+			deleteRes.status !== 404 &&
+			deleteRes.status !== 410
+		) {
+			const err = deleteRes.json as GoogleApiError;
+			throw new Error(
+				`Failed to delete original instance (${deleteRes.status}): ${err.error?.message ?? "no message"}`,
+			);
+		}
+
+		// Step 2 — truncate the master series
 		const patchRes = await this.patchWithAuth(
 			account,
 			`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(instance.recurringEventId!)}?sendUpdates=none`,
 			{ recurrence: truncatedRecurrence },
 		);
 		if (patchRes.status < 200 || patchRes.status >= 300) {
-			const err = patchRes.json  as GoogleApiError;
-			throw new Error(
-				err.error?.message ?? "Failed to truncate master series",
-			);
+			const err = patchRes.json as GoogleApiError;
+			throw new Error(err.error?.message ?? "Failed to truncate master series");
 		}
 
-		// Step 1.5 — delete the original instance so it doesn't ghost after truncation
-		const deleteRes = await this.deleteWithAuth(
-			account,
-			`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(instance.id)}?sendUpdates=none`,
-		);
-		if ((deleteRes.status < 200 || deleteRes.status >= 300) && deleteRes.status !== 410) {
-			// Rollback master
-			await this.patchWithAuth(
-				account,
-				`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(instance.recurringEventId!)}?sendUpdates=none`,
-				{ recurrence: originalRecurrence },
-			);
-			throw new Error("Failed to delete original instance.");
-		}
-
-		// Step 2 — POST new series from this instance forward
+		// Step 3 — POST new series from this instance forward
 		const newEvent = {
 			summary: updates.title,
 			start: updates.allDay
@@ -622,6 +629,7 @@ export class GoogleCalendarAPI {
 				refresh_token: account.refreshToken,
 				grant_type: "refresh_token",
 			}).toString(),
+			throw: false,
 		});
 
 		if (response.status < 200 || response.status >= 300) {

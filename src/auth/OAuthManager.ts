@@ -114,6 +114,7 @@ export class OAuthManager {
 				grant_type: "authorization_code",
 				code_verifier: codeVerifier,
 			}).toString(),
+			throw: false,
 		});
 
 		if (response.status < 200 || response.status >= 300) {
@@ -127,6 +128,7 @@ export class OAuthManager {
 		const response = await requestUrl({
 			url: "https://www.googleapis.com/oauth2/v3/userinfo",
 			headers: { Authorization: `Bearer ${accessToken}` },
+			throw: false,
 		});
 
 		if (response.status < 200 || response.status >= 300) {
