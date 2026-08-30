@@ -1584,17 +1584,23 @@ meeting, or a meeting under 15 minutes away. Only then enable the toggle.
 ### Done
 
 - Phases 1–14 complete. Plugin published to the Obsidian Community store.
-- `manifest.json` at `1.0.18`, `minAppVersion` `1.7.2`.
-- Test suite: 71 Vitest tests, 6 files, wired into CI (section 15).
+- `manifest.json` at `1.0.21`, `minAppVersion` `1.7.2`. Latest git tag is `1.0.20`, so
+  `1.0.21` is built but not yet released.
+- Test suite: 79 Vitest tests, 7 files, wired into CI (section 15).
 - `eslint .` exits 0. It had been failing on 36 errors, so the CI lint job was red (section 16).
+- Zero `eslint-disable`, `@ts-ignore` or `@ts-expect-error` comments anywhere in the repo,
+  after the Obsidian submission rejected the three that existed (section 17).
 - Full gate verified green: `tsc`, `npm test`, `eslint .`, production build.
 
 ### Open items — start here next session
 
-1. **Ship a release carrying the lint fixes.** The removed token-logging `console.log`
-   calls are in the repo but not in any published build. Shawn is handling this via a
-   normal release rather than hand-copying builds into vaults.
-2. **Phase 15 — automatic Task Prep buffers.** Designed in full below, not started.
+1. **Ship the `1.0.21` release.** Commit `5d3f008` is pushed but untagged, and it is the
+   commit that removed the token-logging `console.log` calls. Until it is tagged and
+   released, the credential leak fixed in section 16 is still in every published build.
+   The submission that surfaced section 17's errors must also be resubmitted.
+2. **Commit `tests/commandIds.test.ts`** and the recording `Plugin` stub it needs in
+   `tests/stubs/obsidian.ts`. Written and passing, not yet committed.
+3. **Phase 15 — automatic Task Prep buffers.** Designed in full below, not started.
 
 ### Next session start
 
@@ -1882,15 +1888,15 @@ Obsidian prefixes command names with the plugin name automatically, so
 The prefix was dropped from all 9 commands. **Command IDs were not changed**, so existing
 hotkey bindings are unaffected.
 
-### Deprecations suppressed with reasons, not migrated
+### Deprecations suppressed with reasons, not migrated — SUPERSEDED, see section 17
 
-| API | Why it stays |
-|---|---|
-| `setWarning()` | Purely cosmetic — both it and `setDestructive()` render a red button. `setDestructive` needs Obsidian 1.13.0. Commit `b776c4d` already tried it and reverted, because it forced `minAppVersion` from 1.0.0 up to 1.13.1. |
-| `display()` ×2 | Obsidian's own type definitions state display() is *"only implemented as a fallback for plugins that need to support Obsidian versions older than 1.13.0"* — exactly this plugin at 1.7.2. The replacement, `getSettingDefinitions()`, is a declarative rewrite of the whole tab, not a swap. |
+Three `eslint-disable-next-line @typescript-eslint/no-deprecated` comments were added
+here, one for `setWarning()` and two for `display()`, on the reasoning that both
+replacements require Obsidian 1.13.0 and `minAppVersion` is 1.7.2.
 
-Both carry inline comments naming the version constraint. Revisit only if `minAppVersion`
-is raised to 1.13.0, which would drop every user below it.
+**Obsidian's release check rejected all three.** Its lint config forbids disabling that
+rule at all. The suppressions are gone; section 17 records what replaced them and why the
+reasoning above was the wrong shape of answer.
 
 ### sentence-case configured rather than suppressed (19 errors)
 
@@ -1909,3 +1915,100 @@ with our additions appended — re-sync that list if the plugin ever updates it.
 `.github/workflows/lint.yml` runs `npm test` **before** `npm run lint`. That order was
 chosen while lint was still failing; now that both pass it matters less, but tests-first
 means a broken test is reported even if a lint rule regresses.
+
+---
+
+## 17. Obsidian Submission Rejection — Deprecated-API Suppressions, 29 Aug 2026
+
+The `1.0.21` submission was rejected by Obsidian's automated release check with six
+errors, all pointing at the same three lines in `src/settings/SettingsTab.ts` (83, 89,
+124):
+
+- *Unexpected undescribed directive comment. Include descriptions to explain why the
+  comment is necessary.*
+- *Disabling `@typescript-eslint/no-deprecated` is not allowed.*
+
+Those three lines were the `eslint-disable-next-line` comments added during the lint
+cleanup in section 16.
+
+### The two errors are not two problems
+
+The first error is fixable by rewording — the rule wants the reason on the directive line
+itself (`// eslint-disable-next-line rule -- reason`), and ours sat on separate comment
+lines above it. The second error makes that irrelevant: the directive is not allowed to
+exist at all, however it is worded. So there was one fix, not two, and it was to delete
+all three suppressions and stop referencing the deprecated APIs.
+
+### `display()` — overriding is not calling
+
+`PluginSettingTab.display()` is deprecated from 1.13.0 in favour of the declarative
+`getSettingDefinitions()`. Migrating means rewriting the whole tab and raising
+`minAppVersion`. Neither was necessary, because the rule flags *references* to a
+deprecated symbol, not an override declaration.
+
+Obsidian calls `display()`; we override it. That override is fine and the linter agrees.
+What was flagged was our own two calls to `this.display()`, used to re-render the tab in
+place after an account is added or removed.
+
+The fix is a thin override plus a method of our own:
+
+```ts
+display(): void {
+	this.renderTab();
+}
+
+private renderTab(): void {
+	void (async () => { /* unchanged body */ })();
+}
+```
+
+The two self-refresh sites now call `this.renderTab()`. Nothing in our code references
+`display()` any more. The IIFE body was left untouched, so the diff is the wrapper only.
+
+### `setWarning()` — the deprecated method and its replacement do the same one thing
+
+`setWarning()` is deprecated from 1.13.0; `setDestructive()` requires 1.13.0. Both add the
+`mod-warning` class and nothing else, so the class can be applied directly:
+
+```ts
+.setButtonText("Remove")
+.then((b) => b.buttonEl.addClass("mod-warning"))
+```
+
+`then()` has been on `BaseComponent` since 0.9.7, well under the 1.7.2 floor. The Remove
+button renders identically. `minAppVersion` stays at 1.7.2, so the revert in `b776c4d`
+still stands and no user is dropped.
+
+### What was actually wrong with the section 16 reasoning
+
+Both entries in that table justified *keeping* a deprecated call, and the justifications
+were true — the migrations really do require 1.13.0. The mistake was accepting
+"suppress it with a good reason" as an available outcome. For this rule Obsidian does not
+offer that outcome, and once suppression is off the table the question changes from
+*"can we migrate?"* to *"can we avoid referencing the symbol at all?"* Both had an answer
+that cost nothing: one needed a rename, the other one line of CSS class.
+
+Worth carrying forward: a suppression comment explaining why a lint error is acceptable
+is a signal the fix was not looked for hard enough. The repo now has zero
+`eslint-disable`, `@ts-ignore` or `@ts-expect-error` comments, and that is the state to
+keep it in.
+
+### `npm run lint` is not the submission gate
+
+The two rules that rejected the build, `eslint-comments/require-description` and
+`eslint-comments/no-restricted-disable`, are **not** part of
+`eslint-plugin-obsidianmd`'s recommended config, which is all `eslint.config.mts` loads.
+`eslint .` exited 0 locally the whole time. A green local lint says nothing about whether
+Obsidian will accept the submission.
+
+To close that gap, add `@eslint-community/eslint-plugin-eslint-comments` as a
+devDependency and enable both rules in `eslint.config.mts`. Not done yet — it is worth
+doing before the next submission rather than discovering the next divergence the same way.
+
+### Verification
+
+`tsc -noEmit`, `eslint .`, and 79 tests all pass after the change.
+`@typescript-eslint/no-deprecated` is active in our own config — it is what produced the
+original 3 errors — and it does not flag the `display()` override declaration. That makes
+local lint a genuine check on this specific fix, even though it could not have caught the
+original rejection.
